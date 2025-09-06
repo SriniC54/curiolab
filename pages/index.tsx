@@ -127,7 +127,7 @@ export default function Home() {
     setError('')
     
     try {
-      const response = await fetch('http://localhost:8000/generate-dimensions', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-dimensions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -215,7 +215,7 @@ export default function Home() {
     setError('')
     
     try {
-      const response = await fetch('http://localhost:8000/generate-content', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
