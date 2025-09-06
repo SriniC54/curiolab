@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+openai>=1.0.0
+textstat
+python-dotenv
+requests
