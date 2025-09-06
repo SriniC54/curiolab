@@ -1,6 +1,26 @@
-# StudyMate MVP
+# 🔬 CurioLab - Laboratory of Curiosity
 
-AI-driven study guide for kids - Water topic (Grades 3-5)
+**Interactive learning adventures for elementary students (Grades 3-5)**
+
+CurioLab is an AI-powered educational platform that generates personalized, grade-appropriate content across multiple learning dimensions. Students can explore any topic through science, history, geography, culture, and environmental perspectives.
+
+## ✨ Features
+
+- **Profile System**: Personalized learning with name, grade, and avatar selection
+- **Dynamic Content Generation**: AI-powered educational content tailored to specific grades
+- **Multiple Learning Dimensions**: Explore topics from different perspectives  
+- **Any Topic Support**: Students can learn about anything that interests them
+- **Interactive UI**: Kid-friendly design with animations and engaging visuals
+- **Image Integration**: Contextual images enhance learning experiences
+- **Readability Optimization**: Content complexity matches grade levels
+
+## 🚀 Tech Stack
+
+- **Frontend**: Next.js, TypeScript, TailwindCSS
+- **Backend**: FastAPI, Python
+- **AI**: OpenAI GPT-4
+- **Images**: Unsplash integration
+- **Storage**: LocalStorage for profiles
 
 ## Quick Start
 
@@ -23,35 +43,27 @@ npm run dev
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 
-## Features (MVP)
+## Current Features
 
-- ✅ AI content generation for Water topic
+- ✅ Profile system with name, grade, avatar
+- ✅ AI content generation for any topic
 - ✅ Grade-level appropriate content (3-5)
-- ✅ 5 dimensions: Science, Geography, History, Environment, Politics
+- ✅ Dynamic learning dimensions
 - ✅ Readability scoring
 - ✅ Kid-friendly interface
-
-## Tech Stack
-
-- **Frontend**: Next.js, React, TypeScript, Tailwind CSS
-- **Backend**: FastAPI, Python
-- **AI**: OpenAI GPT-4
-- **Readability**: textstat library
+- ✅ Image integration
+- ✅ LocalStorage persistence
 
 ## Future Features (Roadmap)
 
-- RAG integration with external sources
-- Image generation 
-- More topics (Solar System, Animals)
-- User authentication
-- Content approval workflow
+- Progress tracking and learning analytics
+- Audio narration for content
+- Feedback collection system
+- Cloud storage and sync
 - Mobile app (React Native)
+- Parental dashboard
+- Content approval workflow
 
-## MVP Limitations
+## Deployment
 
-- Single topic: Water only
-- Grades 3-5 only
-- No image generation yet
-- No user accounts
-- No content persistence
-- No RAG (coming in Phase 2)
+Ready for deployment to DigitalOcean with Docker configuration.

@@ -11,7 +11,7 @@ import random
 
 load_dotenv()
 
-app = FastAPI(title="StudyMate API", version="0.1.0")
+app = FastAPI(title="CurioLab API", version="0.1.0")
 
 # Configure CORS for local development
 app.add_middleware(
@@ -41,7 +41,7 @@ class ContentResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "StudyMate API is running!"}
+    return {"message": "CurioLab API is running!"}
 
 @app.post("/generate-dimensions")
 async def generate_dimensions(topic_data: dict):

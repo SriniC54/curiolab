@@ -48,7 +48,7 @@ export default function Home() {
 
   // Load profile from localStorage on mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem('studymate-profile')
+    const savedProfile = localStorage.getItem('curiolab-profile')
     if (savedProfile) {
       const profile = JSON.parse(savedProfile)
       setUserProfile(profile)
@@ -72,7 +72,7 @@ export default function Home() {
       createdAt: new Date().toISOString()
     }
 
-    localStorage.setItem('studymate-profile', JSON.stringify(newProfile))
+    localStorage.setItem('curiolab-profile', JSON.stringify(newProfile))
     setUserProfile(newProfile)
     setSelectedGrade(newProfile.grade)
     setShowProfileSetup(false)
@@ -83,7 +83,7 @@ export default function Home() {
     if (!userProfile) return
     
     const updatedProfile = { ...userProfile, ...updates }
-    localStorage.setItem('studymate-profile', JSON.stringify(updatedProfile))
+    localStorage.setItem('curiolab-profile', JSON.stringify(updatedProfile))
     setUserProfile(updatedProfile)
     if (updates.grade) {
       setSelectedGrade(updates.grade)
@@ -91,7 +91,7 @@ export default function Home() {
   }
 
   const resetProfile = () => {
-    localStorage.removeItem('studymate-profile')
+    localStorage.removeItem('curiolab-profile')
     setUserProfile(null)
     setShowProfileSetup(true)
     // Reset all states
@@ -252,7 +252,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>StudyMate - Learning Adventures for Kids!</title>
+        <title>CurioLab - Laboratory of Curiosity for Kids!</title>
         <meta name="description" content="Interactive learning adventures for elementary students" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
@@ -264,7 +264,7 @@ export default function Home() {
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
               <div className="text-center mb-6">
                 <h2 className="text-4xl font-black text-blue-700 mb-2">
-                  Welcome to StudyMate! 🌟
+                  Welcome to CurioLab! 🔬
                 </h2>
                 <p className="text-gray-600">Let's create your learning profile</p>
               </div>
@@ -367,7 +367,7 @@ export default function Home() {
             )}
 
             <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 mb-4">
-              🚀 StudyMate 🌟
+              🔬 CurioLab 🌟
             </h1>
             {selectedTopic ? (
               <div>
