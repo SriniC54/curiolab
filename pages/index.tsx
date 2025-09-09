@@ -171,7 +171,7 @@ export default function Home() {
 
   const renderContentWithImages = (content: string, images: any[]) => {
     const sections = content.split(/\n\n+/)
-    const contentWithImages = []
+    const contentWithImages: JSX.Element[] = []
     let imageIndex = 0
 
     sections.forEach((section, index) => {
