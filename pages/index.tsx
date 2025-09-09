@@ -25,6 +25,29 @@ interface UserProfile {
   createdAt: string
 }
 
+interface LearningSession {
+  id: string
+  topic: string
+  dimension: string
+  grade: number
+  startedAt: string
+  completedAt?: string
+  timeSpent?: number
+  rating?: 'thumbs_up' | 'thumbs_down'
+  wordCount: number
+  readabilityScore: number
+}
+
+interface UserProgress {
+  profile: UserProfile
+  sessions: LearningSession[]
+  totalTimeSpent: number
+  topicsExplored: number
+  favoriteTopics: string[]
+  createdAt: string
+  lastActivity: string
+}
+
 export default function Home() {
   // Profile states
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -34,6 +57,11 @@ export default function Home() {
     grade: 4,
     avatar: '🎓'
   })
+
+  // Progress tracking states
+  const [userProgress, setUserProgress] = useState<UserProgress | null>(null)
+  const [currentSession, setCurrentSession] = useState<LearningSession | null>(null)
+  const [showFeedback, setShowFeedback] = useState(false)
 
   // Existing states
   const [selectedTopic, setSelectedTopic] = useState('')
@@ -46,13 +74,19 @@ export default function Home() {
   const [loadingDimensions, setLoadingDimensions] = useState(false)
   const [error, setError] = useState('')
 
-  // Load profile from localStorage on mount
+  // Load profile and progress from localStorage on mount
   useEffect(() => {
     const savedProfile = localStorage.getItem('curiolab-profile')
     if (savedProfile) {
       const profile = JSON.parse(savedProfile)
       setUserProfile(profile)
       setSelectedGrade(profile.grade) // Use profile grade as default
+    }
+
+    const savedProgress = localStorage.getItem('curiolab-progress')
+    if (savedProgress) {
+      const progress = JSON.parse(savedProgress)
+      setUserProgress(progress)
     }
     // No longer auto-show profile setup - let users explore first
   }, [])
@@ -91,7 +125,9 @@ export default function Home() {
 
   const resetProfile = () => {
     localStorage.removeItem('curiolab-profile')
+    localStorage.removeItem('curiolab-progress')
     setUserProfile(null)
+    setUserProgress(null)
     setShowProfileSetup(true)
     // Reset all states
     setSelectedTopic('')
@@ -100,6 +136,76 @@ export default function Home() {
     setSelectedDimension('')
     setContent(null)
     setError('')
+  }
+
+  // Progress tracking functions
+  const startLearningSession = (topic: string, dimension: string, grade: number) => {
+    const session: LearningSession = {
+      id: Date.now().toString(),
+      topic,
+      dimension,
+      grade,
+      startedAt: new Date().toISOString(),
+      wordCount: 0,
+      readabilityScore: 0
+    }
+    setCurrentSession(session)
+  }
+
+  const completeLearningSession = (contentData: ContentResponse) => {
+    if (!currentSession) return
+
+    const completedSession: LearningSession = {
+      ...currentSession,
+      completedAt: new Date().toISOString(),
+      timeSpent: Math.floor((Date.now() - new Date(currentSession.startedAt).getTime()) / 1000),
+      wordCount: contentData.word_count,
+      readabilityScore: contentData.readability_score
+    }
+
+    // Update progress
+    const currentProgress = userProgress || {
+      profile: userProfile!,
+      sessions: [],
+      totalTimeSpent: 0,
+      topicsExplored: 0,
+      favoriteTopics: [],
+      createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString()
+    }
+
+    const updatedProgress: UserProgress = {
+      ...currentProgress,
+      sessions: [...currentProgress.sessions, completedSession],
+      totalTimeSpent: currentProgress.totalTimeSpent + (completedSession.timeSpent || 0),
+      topicsExplored: new Set([...currentProgress.sessions.map(s => s.topic), completedSession.topic]).size,
+      lastActivity: new Date().toISOString()
+    }
+
+    setUserProgress(updatedProgress)
+    localStorage.setItem('curiolab-progress', JSON.stringify(updatedProgress))
+    setCurrentSession(null)
+    setShowFeedback(true)
+  }
+
+  const submitFeedback = (rating: 'thumbs_up' | 'thumbs_down') => {
+    if (!userProgress || userProgress.sessions.length === 0) return
+
+    const updatedSessions = [...userProgress.sessions]
+    const lastSessionIndex = updatedSessions.length - 1
+    updatedSessions[lastSessionIndex] = {
+      ...updatedSessions[lastSessionIndex],
+      rating
+    }
+
+    const updatedProgress = {
+      ...userProgress,
+      sessions: updatedSessions
+    }
+
+    setUserProgress(updatedProgress)
+    localStorage.setItem('curiolab-progress', JSON.stringify(updatedProgress))
+    setShowFeedback(false)
   }
 
   // Avatar options
@@ -213,6 +319,9 @@ export default function Home() {
     setLoading(true)
     setError('')
     
+    // Start tracking learning session
+    startLearningSession(selectedTopic, selectedDimension, selectedGrade)
+    
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`, {
         method: 'POST',
@@ -232,8 +341,12 @@ export default function Home() {
 
       const data: ContentResponse = await response.json()
       setContent(data)
+      
+      // Complete learning session and show feedback
+      completeLearningSession(data)
     } catch (err) {
       setError('Unable to load content. Please try again!')
+      setCurrentSession(null) // Clear session on error
     } finally {
       setLoading(false)
     }
@@ -257,6 +370,47 @@ export default function Home() {
       </Head>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-cyan-100 to-green-100">
+        {/* Feedback Modal */}
+        {showFeedback && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
+              <div className="text-center mb-6">
+                <h2 className="text-4xl font-black text-blue-700 mb-2">
+                  🎉 Great job exploring!
+                </h2>
+                <p className="text-gray-600">How was learning about {selectedTopic}?</p>
+              </div>
+
+              <div className="flex justify-center gap-6 mb-6">
+                <button
+                  onClick={() => submitFeedback('thumbs_up')}
+                  className="flex flex-col items-center p-6 rounded-2xl border-4 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all duration-200 hover:scale-105"
+                >
+                  <div className="text-6xl mb-2">👍</div>
+                  <div className="text-lg font-bold text-green-700">Loved it!</div>
+                  <div className="text-sm text-green-600">That was awesome</div>
+                </button>
+
+                <button
+                  onClick={() => submitFeedback('thumbs_down')}
+                  className="flex flex-col items-center p-6 rounded-2xl border-4 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 hover:scale-105"
+                >
+                  <div className="text-6xl mb-2">👎</div>
+                  <div className="text-lg font-bold text-orange-700">Not for me</div>
+                  <div className="text-sm text-orange-600">Try something else</div>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowFeedback(false)}
+                className="w-full text-gray-500 hover:text-gray-700 text-sm font-medium"
+              >
+                Skip for now
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Profile Setup Modal */}
         {showProfileSetup && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -353,6 +507,11 @@ export default function Home() {
                       Hi {userProfile.name}! 👋
                     </h3>
                     <p className="text-gray-600 text-sm">Grade {userProfile.grade} Explorer</p>
+                    {userProgress && userProgress.sessions.length > 0 && (
+                      <div className="text-xs text-green-600 mt-1">
+                        📚 {userProgress.topicsExplored} topics explored • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min learning
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => setShowProfileSetup(true)}
