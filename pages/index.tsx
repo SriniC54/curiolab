@@ -163,9 +163,15 @@ export default function Home() {
       readabilityScore: contentData.readability_score
     }
 
-    // Update progress
+    // Update progress (only if user has a profile)
+    if (!userProfile) {
+      // If no profile, just clear session - don't track progress
+      setCurrentSession(null)
+      return
+    }
+
     const currentProgress = userProgress || {
-      profile: userProfile!,
+      profile: userProfile,
       sessions: [],
       totalTimeSpent: 0,
       topicsExplored: 0,
@@ -342,8 +348,10 @@ export default function Home() {
       const data: ContentResponse = await response.json()
       setContent(data)
       
-      // Complete learning session and show feedback
-      completeLearningSession(data)
+      // Complete learning session and show feedback (only if profile exists)
+      if (userProfile) {
+        completeLearningSession(data)
+      }
     } catch (err) {
       setError('Unable to load content. Please try again!')
       setCurrentSession(null) // Clear session on error
