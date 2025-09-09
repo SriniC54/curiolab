@@ -16,7 +16,12 @@ app = FastAPI(title="CurioLab API", version="0.1.0")
 # Configure CORS for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:3001", 
+        "http://localhost:3002",
+        "http://206.81.1.149:3000"  # Add your server's IP
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
