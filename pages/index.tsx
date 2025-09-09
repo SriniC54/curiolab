@@ -150,7 +150,7 @@ export default function Home() {
       setSelectedDimension(dimensionObjects[0]?.name || '')
     } catch (err) {
       console.error('Dimension generation error:', err)
-      setError(`Unable to generate learning dimensions. Please try again! (${err.message || 'Unknown error'})`)
+      setError(`Unable to generate learning dimensions. Please try again! (${err instanceof Error ? err.message : 'Unknown error'})`)
     } finally {
       setLoadingDimensions(false)
     }
