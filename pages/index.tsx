@@ -507,7 +507,7 @@ export default function Home() {
         {/* Profile Setup/Settings Modal */}
         {showProfileSetup && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-4 lg:p-8 max-h-[95vh] overflow-y-auto">
               {userProfile ? (
                 // Settings for existing users
                 <div>
@@ -623,15 +623,15 @@ export default function Home() {
                       <label className="block text-sm font-bold text-gray-700 mb-2">
                         What grade are you in?
                       </label>
-                      <div className="flex gap-3">
+                      <div className="flex gap-2 lg:gap-3">
                         {[3, 4, 5].map((grade) => (
                           <button
                             key={grade}
                             onClick={() => setProfileForm({...profileForm, grade})}
-                            className={`flex-1 py-3 rounded-xl font-bold text-lg transition-all ${
+                            className={`flex-1 py-3 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
                               profileForm.grade === grade
                                 ? 'bg-green-500 text-white shadow-lg scale-105'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                             }`}
                           >
                             Grade {grade}
@@ -650,10 +650,10 @@ export default function Home() {
                           <button
                             key={avatar}
                             onClick={() => setProfileForm({...profileForm, avatar})}
-                            className={`w-12 h-12 rounded-xl text-2xl transition-all ${
+                            className={`w-12 h-12 lg:w-14 lg:h-14 rounded-xl text-2xl lg:text-3xl transition-all touch-manipulation ${
                               profileForm.avatar === avatar
                                 ? 'bg-blue-200 scale-110 shadow-lg'
-                                : 'bg-gray-100 hover:bg-gray-200'
+                                : 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300'
                             }`}
                           >
                             {avatar}
@@ -688,22 +688,29 @@ export default function Home() {
         <main className="container mx-auto px-4 py-6">
           {/* Header */}
           <div className="mb-10">
-            {/* Profile Section and CurioLab Title */}
-            <div className="flex items-center justify-between mb-8">
-              {/* Left Side - Expanded Profile Section */}
-              <div className="flex-1">
+            {/* Mobile-First Header Layout */}
+            <div className="space-y-6 mb-8">
+              {/* CurioLab Title - Top on Mobile, Right on Desktop */}
+              <div className="flex justify-center lg:justify-end">
+                <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 text-center lg:text-right">
+                  🔬 CurioLab 🌟
+                </h1>
+              </div>
+
+              {/* Profile Section - Full Width on Mobile */}
+              <div className="w-full">
                 {userProfile ? (
-                  <div className="bg-white rounded-2xl shadow-lg p-6 max-w-2xl">
-                    <div className="flex items-center gap-4">
-                      <div className="text-4xl">{userProfile.avatar}</div>
-                      <div className="text-left flex-1">
-                        <h3 className="font-bold text-blue-700 text-2xl">
+                  <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 w-full">
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="text-3xl md:text-4xl flex-shrink-0">{userProfile.avatar}</div>
+                      <div className="text-left flex-1 min-w-0">
+                        <h3 className="font-bold text-blue-700 text-xl md:text-2xl truncate">
                           Hi {userProfile.name}! 👋
                         </h3>
-                        <p className="text-gray-600 text-lg">Grade {userProfile.grade} Explorer</p>
+                        <p className="text-gray-600 text-base md:text-lg">Grade {userProfile.grade} Explorer</p>
                         {userProgress && userProgress.sessions.length > 0 && (
-                          <div className="text-sm text-green-600 mt-2 space-y-1">
-                            <div>📚 {userProgress.topicsExplored} topics explored • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min learning</div>
+                          <div className="text-xs md:text-sm text-green-600 mt-2 space-y-1">
+                            <div>📚 {userProgress.topicsExplored} topics • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min</div>
                             {userProgress.learningStreak.currentStreak > 0 && (
                               <div className="font-bold">🔥 {userProgress.learningStreak.currentStreak} day streak!</div>
                             )}
@@ -712,7 +719,7 @@ export default function Home() {
                       </div>
                       <button
                         onClick={() => setShowProfileSetup(true)}
-                        className="ml-4 text-gray-400 hover:text-gray-600 text-lg"
+                        className="text-gray-400 hover:text-gray-600 text-lg md:text-xl p-2 flex-shrink-0"
                         title="Settings"
                       >
                         ⚙️
@@ -720,31 +727,24 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-gradient-to-r from-blue-100 to-green-100 rounded-2xl shadow-lg p-6 border-2 border-blue-200 max-w-2xl">
-                    <div className="flex items-center gap-4">
-                      <div className="text-4xl">👤</div>
-                      <div className="text-left flex-1">
-                        <h3 className="font-bold text-blue-700 text-2xl">
+                  <div className="bg-gradient-to-r from-blue-100 to-green-100 rounded-2xl shadow-lg p-4 md:p-6 border-2 border-blue-200 w-full">
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="text-3xl md:text-4xl flex-shrink-0">👤</div>
+                      <div className="text-left flex-1 min-w-0">
+                        <h3 className="font-bold text-blue-700 text-xl md:text-2xl">
                           Welcome to CurioLab! 
                         </h3>
-                        <p className="text-gray-600 text-lg">Create a profile to track your learning progress and build streaks</p>
+                        <p className="text-gray-600 text-sm md:text-lg">Create a profile to track your progress and build streaks</p>
                       </div>
                       <button
                         onClick={() => setShowProfileSetup(true)}
-                        className="ml-4 bg-gradient-to-r from-blue-500 to-green-500 text-white px-8 py-3 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-md"
+                        className="bg-gradient-to-r from-blue-500 to-green-500 text-white px-4 py-2 md:px-8 md:py-3 rounded-full font-bold text-sm md:text-lg hover:scale-105 transition-transform shadow-md flex-shrink-0"
                       >
-                        🚀 Create Profile
+                        🚀 Create
                       </button>
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Right Side - CurioLab Title */}
-              <div className="ml-8">
-                <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600">
-                  🔬 CurioLab 🌟
-                </h1>
               </div>
             </div>
 
@@ -802,15 +802,15 @@ export default function Home() {
                   <h2 className="text-3xl font-black mb-6 text-center text-blue-800">
                     💡 Or Pick From These Fun Ideas! 
                   </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
                     {topicSuggestions.map((topic, index) => (
                       <button
                         key={index}
                         onClick={() => handleTopicSelection(topic.name)}
-                        className={`p-4 rounded-2xl border-4 transition-all duration-200 hover:scale-105 hover:shadow-xl bg-gradient-to-br ${topic.color} border-white text-white hover:border-yellow-300 shadow-lg`}
+                        className={`p-3 lg:p-4 rounded-2xl border-4 transition-all duration-200 hover:scale-105 hover:shadow-xl active:scale-95 bg-gradient-to-br ${topic.color} border-white text-white hover:border-yellow-300 shadow-lg touch-manipulation min-h-[100px] lg:min-h-[120px]`}
                       >
-                        <div className="text-4xl mb-2">{topic.emoji}</div>
-                        <div className="text-lg font-black">{topic.name}</div>
+                        <div className="text-3xl lg:text-4xl mb-2">{topic.emoji}</div>
+                        <div className="text-base lg:text-lg font-black">{topic.name}</div>
                       </button>
                     ))}
                   </div>
@@ -827,11 +827,11 @@ export default function Home() {
               </div>
             )}
 
-            {/* Two-Panel Layout: Dimensions Left, Content Right */}
+            {/* Mobile-Responsive Layout: Stack on Mobile, Side-by-Side on Desktop */}
             {selectedTopic && availableDimensions.length > 0 && (
-              <div className="grid grid-cols-12 gap-6 min-h-screen">
-                {/* Left Panel - Dimensions */}
-                <div className="col-span-3 bg-gradient-to-br from-blue-50 to-cyan-100 rounded-2xl shadow-lg p-6 h-fit sticky top-6 border-2 border-blue-200">
+              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6 min-h-screen">
+                {/* Dimensions Panel - Top on Mobile, Left on Desktop */}
+                <div className="lg:col-span-4 xl:col-span-3 bg-gradient-to-br from-blue-50 to-cyan-100 rounded-2xl shadow-lg p-4 lg:p-6 lg:h-fit lg:sticky lg:top-6 border-2 border-blue-200">
                   <h3 className="text-2xl font-bold text-blue-700 mb-4">
                     📚 {selectedTopic}
                   </h3>
@@ -873,7 +873,7 @@ export default function Home() {
                   
                   <p className="text-gray-600 mb-6">Choose how you want to explore:</p>
                   
-                  <div className="space-y-3">
+                  <div className="space-y-2 lg:space-y-3">
                     {availableDimensions.map((dimension, index) => {
                       const isCompleted = userProfile ? isDimensionCompleted(selectedTopic, dimension.name) : false
                       const isSelected = selectedDimension === dimension.name
@@ -887,25 +887,25 @@ export default function Home() {
                             setShowFeedback(false) // Reset feedback when switching dimensions
                           }}
                           disabled={loading}
-                          className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 relative ${
+                          className={`w-full text-left p-3 lg:p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 relative touch-manipulation min-h-[60px] lg:min-h-[auto] ${
                             isSelected
                               ? (isCompleted 
                                   ? 'border-green-600 bg-gradient-to-r from-green-100 to-green-200 shadow-lg transform scale-105 ring-2 ring-green-300' 
                                   : 'border-blue-600 bg-gradient-to-r from-blue-100 to-blue-200 shadow-lg transform scale-105 ring-2 ring-blue-300')
                               : (isCompleted 
-                                  ? 'border-green-300 bg-gradient-to-r from-green-50 to-green-100 hover:border-green-400' 
-                                  : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50')
+                                  ? 'border-green-300 bg-gradient-to-r from-green-50 to-green-100 hover:border-green-400 active:bg-green-200' 
+                                  : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50 active:bg-blue-100')
                           }`}
                         >
-                          <div className={`font-bold ${
+                          <div className={`font-bold text-base lg:text-lg flex items-center justify-between ${
                             isCompleted ? 'text-green-700' : 'text-blue-700'
                           }`}>
-                            {dimension.emoji} {dimension.name}
+                            <span>{dimension.emoji} {dimension.name}</span>
                             {isCompleted && (
-                              <span className="ml-2 text-green-600">✅</span>
+                              <span className="text-green-600 text-lg">✅</span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-500">{dimension.description}</div>
+                          <div className="text-sm text-gray-500 mt-1">{dimension.description}</div>
                         </button>
                       )
                     })}
@@ -919,8 +919,8 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* Right Panel - Grade Selection and Content */}
-                <div className="col-span-9 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl shadow-lg p-8 border-2 border-green-200 flex flex-col">
+                {/* Content Panel - Bottom on Mobile, Right on Desktop */}
+                <div className="lg:col-span-8 xl:col-span-9 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl shadow-lg p-4 lg:p-8 border-2 border-green-200 flex flex-col">
                   {selectedDimension ? (
                     <div className="flex flex-col h-full">
                       <h2 className="text-3xl font-bold text-green-700 mb-6">
@@ -928,9 +928,9 @@ export default function Home() {
                       </h2>
                       
                       {/* Grade Selection - Always Visible */}
-                      <div className="mb-8">
-                        <p className="text-lg text-gray-600 mb-4">Pick your grade level:</p>
-                        <div className="flex gap-4">
+                      <div className="mb-6 lg:mb-8">
+                        <p className="text-base lg:text-lg text-gray-600 mb-3 lg:mb-4">Pick your grade level:</p>
+                        <div className="flex gap-2 lg:gap-4">
                           {[3, 4, 5].map((grade) => (
                             <button
                               key={grade}
@@ -941,10 +941,10 @@ export default function Home() {
                                   setShowFeedback(false) // Reset feedback when changing grade
                                 }
                               }}
-                              className={`px-6 py-4 rounded-xl font-bold text-lg transition-all ${
+                              className={`flex-1 px-4 py-3 lg:px-6 lg:py-4 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
                                 selectedGrade === grade
                                   ? 'bg-green-500 text-white shadow-lg scale-105'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                               }`}
                             >
                               Grade {grade}
@@ -994,8 +994,8 @@ export default function Home() {
                       {content && (
                         <div>
                           {/* Content Display */}
-                          <div className="bg-white rounded-xl p-8 shadow-sm flex-1 overflow-y-auto">
-                            <div className="prose prose-lg max-w-none text-gray-900 leading-relaxed whitespace-pre-wrap">
+                          <div className="bg-white rounded-xl p-4 lg:p-8 shadow-sm flex-1 overflow-y-auto">
+                            <div className="prose prose-base lg:prose-lg max-w-none text-gray-900 leading-relaxed whitespace-pre-wrap">
                               <style jsx>{`
                                 .prose h1, .prose h2, .prose h3 {
                                   color: #1e40af;
@@ -1017,33 +1017,33 @@ export default function Home() {
 
                             {/* Feedback Buttons - Bottom of Content */}
                             {showFeedback && (
-                              <div className="mt-8 pt-6 border-t-2 border-gray-100">
+                              <div className="mt-6 lg:mt-8 pt-4 lg:pt-6 border-t-2 border-gray-100">
                                 <div className="text-center">
-                                  <h3 className="text-xl font-bold text-blue-700 mb-4">
+                                  <h3 className="text-lg lg:text-xl font-bold text-blue-700 mb-4">
                                     🎉 How was learning about {selectedTopic}?
                                   </h3>
                                   
-                                  <div className="flex justify-center gap-4">
+                                  <div className="flex justify-center gap-3 lg:gap-4">
                                     <button
                                       onClick={() => submitFeedback('thumbs_up')}
-                                      className="flex flex-col items-center p-4 rounded-2xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all duration-200 hover:scale-105 min-w-[120px]"
+                                      className="flex flex-col items-center p-3 lg:p-4 rounded-2xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 active:bg-green-200 transition-all duration-200 hover:scale-105 min-w-[100px] lg:min-w-[120px] touch-manipulation"
                                     >
-                                      <div className="text-4xl mb-2">👍</div>
-                                      <div className="text-sm font-bold text-green-700">Loved it!</div>
+                                      <div className="text-3xl lg:text-4xl mb-2">👍</div>
+                                      <div className="text-xs lg:text-sm font-bold text-green-700">Loved it!</div>
                                     </button>
 
                                     <button
                                       onClick={() => submitFeedback('thumbs_down')}
-                                      className="flex flex-col items-center p-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 hover:scale-105 min-w-[120px]"
+                                      className="flex flex-col items-center p-3 lg:p-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 active:bg-orange-200 transition-all duration-200 hover:scale-105 min-w-[100px] lg:min-w-[120px] touch-manipulation"
                                     >
-                                      <div className="text-4xl mb-2">👎</div>
-                                      <div className="text-sm font-bold text-orange-700">Not for me</div>
+                                      <div className="text-3xl lg:text-4xl mb-2">👎</div>
+                                      <div className="text-xs lg:text-sm font-bold text-orange-700">Not for me</div>
                                     </button>
                                   </div>
 
                                   <button
                                     onClick={() => setShowFeedback(false)}
-                                    className="mt-3 text-gray-400 hover:text-gray-600 text-sm"
+                                    className="mt-3 text-gray-400 hover:text-gray-600 text-sm p-2 touch-manipulation"
                                   >
                                     Skip feedback
                                   </button>
