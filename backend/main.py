@@ -48,6 +48,33 @@ class ContentResponse(BaseModel):
 async def root():
     return {"message": "CurioLab API is running!"}
 
+def is_topic_appropriate(topic: str) -> bool:
+    """Basic check for obviously inappropriate topics."""
+    topic_lower = topic.lower().strip()
+    
+    # List of inappropriate keywords to block
+    inappropriate_keywords = [
+        # Violence & Weapons
+        "gun", "guns", "weapon", "weapons", "bomb", "bombs", "war", "wars", "kill", "killing", "murder", "death", "suicide",
+        "violence", "violent", "fight", "fighting", "attack", "attacks", "terrorist", "terrorism", "shooting",
+        
+        # Mature/Sexual Content  
+        "sex", "sexual", "porn", "nude", "naked", "adult", "mature", "intimate", "romantic",
+        
+        # Drugs & Substances
+        "drug", "drugs", "alcohol", "beer", "wine", "cocaine", "marijuana", "smoking", "cigarette",
+        
+        # Disturbing Content
+        "scary", "horror", "ghost", "demon", "evil", "blood", "gore", "disturbing"
+    ]
+    
+    # Check if topic contains inappropriate keywords
+    for keyword in inappropriate_keywords:
+        if keyword in topic_lower:
+            return False
+    
+    return True
+
 @app.post("/generate-dimensions")
 async def generate_dimensions(topic_data: dict):
     """Generate educational dimensions for any topic."""
@@ -55,6 +82,10 @@ async def generate_dimensions(topic_data: dict):
     
     if not topic or len(topic) < 2:
         raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
+    
+    # Basic topic appropriateness check
+    if not is_topic_appropriate(topic):
+        raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
     
     try:
         dimensions = await generate_dimensions_for_topic(topic)
@@ -72,6 +103,10 @@ async def generate_content(request: ContentRequest):
     # Basic topic validation (just ensure it's not empty)
     if not request.topic or len(request.topic.strip()) < 2:
         raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
+    
+    # Basic topic appropriateness check
+    if not is_topic_appropriate(request.topic):
+        raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
     
     # Only allow grades 3-5
     if request.grade_level not in [3, 4, 5]:
@@ -104,13 +139,21 @@ async def generate_content(request: ContentRequest):
 async def generate_dimensions_for_topic(topic: str) -> list:
     """Generate 5 relevant dimensions for any topic using AI."""
     
-    system_prompt = f"""You are an educational content expert. For the given topic, generate exactly 5 educational dimensions that would be interesting and appropriate for elementary students (grades 3-5).
+    system_prompt = f"""You are an educational content expert who creates safe, age-appropriate content for children. For the given topic, generate exactly 5 educational dimensions that would be interesting and appropriate for young learners.
 
-REQUIREMENTS:
+SAFETY REQUIREMENTS (CRITICAL):
+- Content must be completely safe and appropriate for children ages 8-18
+- NO violence, weapons, death, scary content, or disturbing themes
+- NO inappropriate, sexual, or mature themes
+- NO political controversy or divisive topics
+- Focus on educational, positive, and inspiring aspects only
+- If topic seems inappropriate, focus on safe educational angles only
+
+CONTENT REQUIREMENTS:
 - Return exactly 5 dimensions
 - Each dimension should be 1-2 words (like "Science", "History", "Geography")  
 - Make them relevant to the topic
-- Suitable for elementary students
+- Educational and age-appropriate for young learners
 - Diverse perspectives on the topic
 
 TOPIC: {topic}
@@ -176,7 +219,17 @@ async def generate_topic_content(topic: str, dimension: str, grade_level: int) -
     
     guidelines = grade_guidelines[grade_level]
     
-    system_prompt = f"""You are an expert children's educational writer who creates engaging, magazine-style content like National Geographic Kids or Highlights.
+    system_prompt = f"""You are an expert children's educational writer who creates engaging, safe, age-appropriate magazine-style content like National Geographic Kids or Highlights.
+
+CRITICAL SAFETY REQUIREMENTS:
+- Content must be 100% safe and appropriate for children ages 8-18
+- NO violence, weapons, death, injury, scary or disturbing content
+- NO inappropriate, sexual, or mature themes whatsoever  
+- NO political controversy, divisive topics, or sensitive current events
+- NO graphic descriptions or frightening scenarios
+- Focus only on positive, educational, inspiring, and uplifting content
+- Use encouraging, wonder-filled language that builds curiosity safely
+- If any aspect of the topic could be inappropriate, focus only on safe educational angles
 
 GRADE LEVEL: {grade_level}
 TOPIC: {topic.title()} - {dimension.title()}
