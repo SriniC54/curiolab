@@ -389,46 +389,6 @@ export default function Home() {
       </Head>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-cyan-100 to-green-100">
-        {/* Feedback Modal */}
-        {showFeedback && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
-              <div className="text-center mb-6">
-                <h2 className="text-4xl font-black text-blue-700 mb-2">
-                  🎉 Great job exploring!
-                </h2>
-                <p className="text-gray-600">How was learning about {selectedTopic}?</p>
-              </div>
-
-              <div className="flex justify-center gap-6 mb-6">
-                <button
-                  onClick={() => submitFeedback('thumbs_up')}
-                  className="flex flex-col items-center p-6 rounded-2xl border-4 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all duration-200 hover:scale-105"
-                >
-                  <div className="text-6xl mb-2">👍</div>
-                  <div className="text-lg font-bold text-green-700">Loved it!</div>
-                  <div className="text-sm text-green-600">That was awesome</div>
-                </button>
-
-                <button
-                  onClick={() => submitFeedback('thumbs_down')}
-                  className="flex flex-col items-center p-6 rounded-2xl border-4 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 hover:scale-105"
-                >
-                  <div className="text-6xl mb-2">👎</div>
-                  <div className="text-lg font-bold text-orange-700">Not for me</div>
-                  <div className="text-sm text-orange-600">Try something else</div>
-                </button>
-              </div>
-
-              <button
-                onClick={() => setShowFeedback(false)}
-                className="w-full text-gray-500 hover:text-gray-700 text-sm font-medium"
-              >
-                Skip for now
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Profile Setup Modal */}
         {showProfileSetup && (
@@ -795,6 +755,42 @@ export default function Home() {
                             ) : (
                               <div className="text-lg leading-7 text-gray-800 whitespace-pre-wrap">
                                 {content.content}
+                              </div>
+                            )}
+
+                            {/* Feedback Buttons - Bottom of Content */}
+                            {showFeedback && (
+                              <div className="mt-8 pt-6 border-t-2 border-gray-100">
+                                <div className="text-center">
+                                  <h3 className="text-xl font-bold text-blue-700 mb-4">
+                                    🎉 How was learning about {selectedTopic}?
+                                  </h3>
+                                  
+                                  <div className="flex justify-center gap-4">
+                                    <button
+                                      onClick={() => submitFeedback('thumbs_up')}
+                                      className="flex flex-col items-center p-4 rounded-2xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all duration-200 hover:scale-105 min-w-[120px]"
+                                    >
+                                      <div className="text-4xl mb-2">👍</div>
+                                      <div className="text-sm font-bold text-green-700">Loved it!</div>
+                                    </button>
+
+                                    <button
+                                      onClick={() => submitFeedback('thumbs_down')}
+                                      className="flex flex-col items-center p-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 hover:scale-105 min-w-[120px]"
+                                    >
+                                      <div className="text-4xl mb-2">👎</div>
+                                      <div className="text-sm font-bold text-orange-700">Not for me</div>
+                                    </button>
+                                  </div>
+
+                                  <button
+                                    onClick={() => setShowFeedback(false)}
+                                    className="mt-3 text-gray-400 hover:text-gray-600 text-sm"
+                                  >
+                                    Skip feedback
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
