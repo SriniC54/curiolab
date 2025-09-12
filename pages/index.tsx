@@ -444,6 +444,7 @@ export default function Home() {
   const generateContent = async () => {
     setLoading(true)
     setError('')
+    setShowFeedback(false) // Reset feedback state for new content generation
     
     // Start tracking learning session
     startLearningSession(selectedTopic, selectedDimension, selectedGrade)
@@ -490,6 +491,7 @@ export default function Home() {
     setSelectedDimension('')
     setContent(null)
     setError('')
+    setShowFeedback(false) // Reset feedback when going back to topic selection
   }
 
   return (
@@ -882,6 +884,7 @@ export default function Home() {
                           onClick={() => {
                             setSelectedDimension(dimension.name)
                             setContent(null) // Clear current content when selecting new dimension
+                            setShowFeedback(false) // Reset feedback when switching dimensions
                           }}
                           disabled={loading}
                           className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 relative ${
@@ -935,6 +938,7 @@ export default function Home() {
                                 setSelectedGrade(grade)
                                 if (content) {
                                   setContent(null) // Clear content to allow re-generation with new grade
+                                  setShowFeedback(false) // Reset feedback when changing grade
                                 }
                               }}
                               className={`px-6 py-4 rounded-xl font-bold text-lg transition-all ${
