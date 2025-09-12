@@ -502,191 +502,270 @@ export default function Home() {
 
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-cyan-100 to-green-100">
 
-        {/* Profile Setup Modal */}
+        {/* Profile Setup/Settings Modal */}
         {showProfileSetup && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
-              <div className="text-center mb-6">
-                <h2 className="text-4xl font-black text-blue-700 mb-2">
-                  Unlock Your Learning Journey! 🚀
-                </h2>
-                <p className="text-gray-600 mb-4">Create a profile to supercharge your experience</p>
-                
-                {/* Benefits */}
-                <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-4 mb-4 text-left">
-                  <h3 className="font-bold text-blue-700 mb-2">Why create a profile?</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">📊</span>
-                      <span>Track your learning progress and time spent</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-blue-500">⭐</span>
-                      <span>Save your favorite topics and come back anytime</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-purple-500">🔥</span>
-                      <span>Build learning streaks and earn achievements</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-orange-500">🎯</span>
-                      <span>Get personalized content recommendations</span>
+              {userProfile ? (
+                // Settings for existing users
+                <div>
+                  <div className="text-center mb-6">
+                    <h2 className="text-4xl font-black text-blue-700 mb-2">
+                      Your Learning Dashboard 📊
+                    </h2>
+                    <div className="flex items-center justify-center gap-4 mb-4">
+                      <div className="text-4xl">{userProfile.avatar}</div>
+                      <div className="text-left">
+                        <h3 className="font-bold text-blue-700 text-xl">{userProfile.name}</h3>
+                        <p className="text-gray-600">Grade {userProfile.grade} Explorer</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="space-y-6">
-                {/* Name Input */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    What's your name?
-                  </label>
-                  <input
-                    type="text"
-                    value={profileForm.name}
-                    onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
-                    placeholder="Enter your name..."
-                    className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:outline-none text-lg"
-                  />
-                </div>
+                  {/* Progress Stats */}
+                  {userProgress && userProgress.sessions.length > 0 && (
+                    <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-6 mb-6">
+                      <h3 className="font-bold text-blue-700 mb-4 text-center">Your Achievements</h3>
+                      <div className="grid grid-cols-2 gap-4 text-center">
+                        <div className="bg-white rounded-lg p-3">
+                          <div className="text-2xl font-bold text-blue-600">{userProgress.topicsExplored}</div>
+                          <div className="text-sm text-gray-600">Topics Explored</div>
+                        </div>
+                        <div className="bg-white rounded-lg p-3">
+                          <div className="text-2xl font-bold text-green-600">{Math.floor(userProgress.totalTimeSpent / 60)}</div>
+                          <div className="text-sm text-gray-600">Minutes Learning</div>
+                        </div>
+                        {userProgress.learningStreak.currentStreak > 0 && (
+                          <>
+                            <div className="bg-white rounded-lg p-3">
+                              <div className="text-2xl font-bold text-orange-600">{userProgress.learningStreak.currentStreak}</div>
+                              <div className="text-sm text-gray-600">Current Streak</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-3">
+                              <div className="text-2xl font-bold text-purple-600">{userProgress.learningStreak.longestStreak}</div>
+                              <div className="text-sm text-gray-600">Best Streak</div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-                {/* Grade Selection */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    What grade are you in?
-                  </label>
-                  <div className="flex gap-3">
-                    {[3, 4, 5].map((grade) => (
-                      <button
-                        key={grade}
-                        onClick={() => setProfileForm({...profileForm, grade})}
-                        className={`flex-1 py-3 rounded-xl font-bold text-lg transition-all ${
-                          profileForm.grade === grade
-                            ? 'bg-green-500 text-white shadow-lg scale-105'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        Grade {grade}
-                      </button>
-                    ))}
+                  {/* Action Buttons */}
+                  <div className="space-y-4">
+                    <button
+                      onClick={resetProfile}
+                      className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-lg"
+                    >
+                      🚪 Logout & Reset Progress
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowProfileSetup(false)}
+                      className="w-full bg-gray-100 text-gray-700 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors"
+                    >
+                      Continue Learning
+                    </button>
                   </div>
                 </div>
-
-                {/* Avatar Selection */}
+              ) : (
+                // Create profile for new users
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Choose your avatar
-                  </label>
-                  <div className="grid grid-cols-6 gap-2">
-                    {avatarOptions.map((avatar) => (
-                      <button
-                        key={avatar}
-                        onClick={() => setProfileForm({...profileForm, avatar})}
-                        className={`w-12 h-12 rounded-xl text-2xl transition-all ${
-                          profileForm.avatar === avatar
-                            ? 'bg-blue-200 scale-110 shadow-lg'
-                            : 'bg-gray-100 hover:bg-gray-200'
-                        }`}
-                      >
-                        {avatar}
-                      </button>
-                    ))}
+                  <div className="text-center mb-6">
+                    <h2 className="text-4xl font-black text-blue-700 mb-2">
+                      Unlock Your Learning Journey! 🚀
+                    </h2>
+                    <p className="text-gray-600 mb-4">Create a profile to supercharge your experience</p>
+                    
+                    {/* Benefits */}
+                    <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-4 mb-4 text-left">
+                      <h3 className="font-bold text-blue-700 mb-2">Why create a profile?</h3>
+                      <div className="space-y-2 text-sm text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-500">📊</span>
+                          <span>Track your learning progress and time spent</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-500">⭐</span>
+                          <span>Save your favorite topics and come back anytime</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-purple-500">🔥</span>
+                          <span>Build learning streaks and earn achievements</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-orange-500">🎯</span>
+                          <span>Get personalized content recommendations</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Name Input */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        What's your name?
+                      </label>
+                      <input
+                        type="text"
+                        value={profileForm.name}
+                        onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
+                        placeholder="Enter your name..."
+                        className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:outline-none text-lg"
+                      />
+                    </div>
+
+                    {/* Grade Selection */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        What grade are you in?
+                      </label>
+                      <div className="flex gap-3">
+                        {[3, 4, 5].map((grade) => (
+                          <button
+                            key={grade}
+                            onClick={() => setProfileForm({...profileForm, grade})}
+                            className={`flex-1 py-3 rounded-xl font-bold text-lg transition-all ${
+                              profileForm.grade === grade
+                                ? 'bg-green-500 text-white shadow-lg scale-105'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            Grade {grade}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Avatar Selection */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        Choose your avatar
+                      </label>
+                      <div className="grid grid-cols-6 gap-2">
+                        {avatarOptions.map((avatar) => (
+                          <button
+                            key={avatar}
+                            onClick={() => setProfileForm({...profileForm, avatar})}
+                            className={`w-12 h-12 rounded-xl text-2xl transition-all ${
+                              profileForm.avatar === avatar
+                                ? 'bg-blue-200 scale-110 shadow-lg'
+                                : 'bg-gray-100 hover:bg-gray-200'
+                            }`}
+                          >
+                            {avatar}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Create Profile Button */}
+                    <button
+                      onClick={createProfile}
+                      disabled={profileForm.name.trim().length < 2}
+                      className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mb-3"
+                    >
+                      🚀 Start Learning Adventure!
+                    </button>
+
+                    {/* Dismiss Option */}
+                    <button
+                      onClick={() => setShowProfileSetup(false)}
+                      className="w-full text-gray-500 hover:text-gray-700 py-2 text-sm font-medium transition-colors"
+                    >
+                      Continue exploring without profile
+                    </button>
                   </div>
                 </div>
-
-                {/* Create Profile Button */}
-                <button
-                  onClick={createProfile}
-                  disabled={profileForm.name.trim().length < 2}
-                  className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mb-3"
-                >
-                  🚀 Start Learning Adventure!
-                </button>
-
-                {/* Dismiss Option */}
-                <button
-                  onClick={() => setShowProfileSetup(false)}
-                  className="w-full text-gray-500 hover:text-gray-700 py-2 text-sm font-medium transition-colors"
-                >
-                  Continue exploring without profile
-                </button>
-              </div>
+              )}
             </div>
           </div>
         )}
 
         <main className="container mx-auto px-4 py-6">
           {/* Header */}
-          <div className="text-center mb-10">
-            {/* Profile Section - Always Visible */}
-            <div className="flex justify-center mb-6">
-              {userProfile ? (
-                <div className="bg-white rounded-2xl shadow-lg p-4 flex items-center gap-4">
-                  <div className="text-3xl">{userProfile.avatar}</div>
-                  <div className="text-left">
-                    <h3 className="font-bold text-blue-700 text-lg">
-                      Hi {userProfile.name}! 👋
-                    </h3>
-                    <p className="text-gray-600 text-sm">Grade {userProfile.grade} Explorer</p>
-                    {userProgress && userProgress.sessions.length > 0 && (
-                      <div className="text-xs text-green-600 mt-1">
-                        📚 {userProgress.topicsExplored} topics explored • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min learning
-                        {userProgress.learningStreak.currentStreak > 0 && (
-                          <span className="ml-2">🔥 {userProgress.learningStreak.currentStreak} day streak!</span>
+          <div className="mb-10">
+            {/* Profile Section and CurioLab Title */}
+            <div className="flex items-center justify-between mb-8">
+              {/* Left Side - Expanded Profile Section */}
+              <div className="flex-1">
+                {userProfile ? (
+                  <div className="bg-white rounded-2xl shadow-lg p-6 max-w-2xl">
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl">{userProfile.avatar}</div>
+                      <div className="text-left flex-1">
+                        <h3 className="font-bold text-blue-700 text-2xl">
+                          Hi {userProfile.name}! 👋
+                        </h3>
+                        <p className="text-gray-600 text-lg">Grade {userProfile.grade} Explorer</p>
+                        {userProgress && userProgress.sessions.length > 0 && (
+                          <div className="text-sm text-green-600 mt-2 space-y-1">
+                            <div>📚 {userProgress.topicsExplored} topics explored • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min learning</div>
+                            {userProgress.learningStreak.currentStreak > 0 && (
+                              <div className="font-bold">🔥 {userProgress.learningStreak.currentStreak} day streak!</div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                      <button
+                        onClick={() => setShowProfileSetup(true)}
+                        className="ml-4 text-gray-400 hover:text-gray-600 text-lg"
+                        title="Settings"
+                      >
+                        ⚙️
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <div className="bg-gradient-to-r from-blue-100 to-green-100 rounded-2xl shadow-lg p-6 border-2 border-blue-200 max-w-2xl">
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl">👤</div>
+                      <div className="text-left flex-1">
+                        <h3 className="font-bold text-blue-700 text-2xl">
+                          Welcome to CurioLab! 
+                        </h3>
+                        <p className="text-gray-600 text-lg">Create a profile to track your learning progress and build streaks</p>
+                      </div>
+                      <button
+                        onClick={() => setShowProfileSetup(true)}
+                        className="ml-4 bg-gradient-to-r from-blue-500 to-green-500 text-white px-8 py-3 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-md"
+                      >
+                        🚀 Create Profile
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Side - CurioLab Title */}
+              <div className="ml-8">
+                <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600">
+                  🔬 CurioLab 🌟
+                </h1>
+              </div>
+            </div>
+
+            {/* Topic Status and Navigation - Moved Lower */}
+            <div className="text-center">
+              {selectedTopic ? (
+                <div className="mb-8">
+                  <p className="text-3xl font-bold text-blue-700 mb-6">
+                    Let's explore {selectedTopic}! ✨
+                  </p>
                   <button
-                    onClick={() => setShowProfileSetup(true)}
-                    className="ml-4 text-gray-400 hover:text-gray-600 text-sm"
-                    title="Edit Profile"
+                    onClick={resetToTopicSelection}
+                    className="bg-gradient-to-r from-blue-500 to-green-500 text-white px-8 py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform shadow-lg"
                   >
-                    ⚙️
+                    🔄 Pick a Different Topic
                   </button>
                 </div>
               ) : (
-                <div className="bg-gradient-to-r from-blue-100 to-green-100 rounded-2xl shadow-lg p-4 border-2 border-blue-200">
-                  <div className="flex items-center gap-4">
-                    <div className="text-3xl">👤</div>
-                    <div className="text-left">
-                      <h3 className="font-bold text-blue-700 text-lg">
-                        Welcome to CurioLab! 
-                      </h3>
-                      <p className="text-gray-600 text-sm">Create a profile to track your learning progress</p>
-                    </div>
-                    <button
-                      onClick={() => setShowProfileSetup(true)}
-                      className="ml-4 bg-gradient-to-r from-blue-500 to-green-500 text-white px-6 py-2 rounded-full font-bold text-sm hover:scale-105 transition-transform shadow-md"
-                    >
-                      🚀 Create Profile
-                    </button>
-                  </div>
-                </div>
+                <p className="text-3xl font-bold text-blue-700 mb-8">
+                  What would you like to learn about? 📚✨
+                </p>
               )}
             </div>
-
-            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 mb-4">
-              🔬 CurioLab 🌟
-            </h1>
-            {selectedTopic ? (
-              <div>
-                <p className="text-2xl font-bold text-blue-700 mb-6">
-                  Let's explore {selectedTopic}! ✨
-                </p>
-                <button
-                  onClick={resetToTopicSelection}
-                  className="bg-gradient-to-r from-blue-500 to-green-500 text-white px-8 py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform shadow-lg"
-                >
-                  🔄 Pick a Different Topic
-                </button>
-              </div>
-            ) : (
-              <p className="text-2xl font-bold text-blue-700">
-                What would you like to learn about? 📚✨
-              </p>
-            )}
           </div>
 
           <div className="max-w-4xl mx-auto">
@@ -897,7 +976,6 @@ export default function Home() {
                               <h4 className="font-bold text-green-700 text-lg">
                                 📖 {selectedTopic} - {selectedDimension} (Grade {content.grade_level})
                               </h4>
-                              <p className="text-sm text-gray-600">{content.word_count} words • Readability: {content.readability_score.toFixed(1)}</p>
                             </div>
                             <button
                               onClick={() => setContent(null)}
@@ -912,16 +990,26 @@ export default function Home() {
                       {content && (
                         <div>
                           {/* Content Display */}
-                          <div className="bg-white rounded-xl p-6 shadow-sm flex-1 overflow-y-auto">
-                            {content.images && content.images.length > 0 ? (
-                              <div className="content-with-images">
-                                {renderContentWithImages(content.content, content.images)}
-                              </div>
-                            ) : (
-                              <div className="text-lg leading-7 text-gray-800 whitespace-pre-wrap">
-                                {content.content}
-                              </div>
-                            )}
+                          <div className="bg-white rounded-xl p-8 shadow-sm flex-1 overflow-y-auto">
+                            <div className="prose prose-lg max-w-none text-gray-900 leading-relaxed whitespace-pre-wrap">
+                              <style jsx>{`
+                                .prose h1, .prose h2, .prose h3 {
+                                  color: #1e40af;
+                                  font-weight: bold;
+                                  margin-top: 1.5rem;
+                                  margin-bottom: 1rem;
+                                }
+                                .prose p {
+                                  margin-bottom: 1.25rem;
+                                  line-height: 1.75;
+                                }
+                                .prose strong {
+                                  color: #065f46;
+                                  font-weight: 700;
+                                }
+                              `}</style>
+                              {content.content}
+                            </div>
 
                             {/* Feedback Buttons - Bottom of Content */}
                             {showFeedback && (
