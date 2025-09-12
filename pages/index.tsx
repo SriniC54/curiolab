@@ -38,12 +38,29 @@ interface LearningSession {
   readabilityScore: number
 }
 
+interface TopicCompletion {
+  topic: string
+  dimensionsCompleted: string[]
+  totalDimensions: number
+  completedAt: string[]
+  isFullyComplete: boolean
+}
+
+interface LearningStreak {
+  currentStreak: number
+  longestStreak: number
+  lastActiveDate: string
+  streakHistory: string[]
+}
+
 interface UserProgress {
   profile: UserProfile
   sessions: LearningSession[]
   totalTimeSpent: number
   topicsExplored: number
   favoriteTopics: string[]
+  completedTopics: TopicCompletion[]
+  learningStreak: LearningStreak
   createdAt: string
   lastActivity: string
 }
@@ -138,6 +155,92 @@ export default function Home() {
     setError('')
   }
 
+  // Topic completion and streak helper functions
+  const updateTopicCompletion = (completedTopics: TopicCompletion[], topic: string, dimension: string): TopicCompletion[] => {
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Find existing topic completion or create new one
+    const existingIndex = completedTopics.findIndex(t => t.topic === topic)
+    
+    if (existingIndex >= 0) {
+      const existing = completedTopics[existingIndex]
+      
+      // Don't add duplicate dimensions
+      if (existing.dimensionsCompleted.includes(dimension)) {
+        return completedTopics
+      }
+      
+      const updatedCompletion: TopicCompletion = {
+        ...existing,
+        dimensionsCompleted: [...existing.dimensionsCompleted, dimension],
+        completedAt: [...existing.completedAt, today],
+        isFullyComplete: existing.dimensionsCompleted.length + 1 >= existing.totalDimensions
+      }
+      
+      const newCompletedTopics = [...completedTopics]
+      newCompletedTopics[existingIndex] = updatedCompletion
+      return newCompletedTopics
+    } else {
+      // New topic completion
+      const newCompletion: TopicCompletion = {
+        topic,
+        dimensionsCompleted: [dimension],
+        totalDimensions: 5, // Default: Science, History, Geography, Culture, Environment
+        completedAt: [today],
+        isFullyComplete: false
+      }
+      
+      return [...completedTopics, newCompletion]
+    }
+  }
+
+  const updateLearningStreak = (currentStreak: LearningStreak): LearningStreak => {
+    const today = new Date().toISOString().split('T')[0]
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    
+    // If already learned today, don't change streak
+    if (currentStreak.lastActiveDate === today) {
+      return currentStreak
+    }
+    
+    let newCurrentStreak = 1
+    let newStreakHistory = [...currentStreak.streakHistory]
+    
+    // Check if this continues yesterday's streak
+    if (currentStreak.lastActiveDate === yesterday) {
+      newCurrentStreak = currentStreak.currentStreak + 1
+    } else if (currentStreak.lastActiveDate !== '') {
+      // Streak was broken, start fresh
+      newCurrentStreak = 1
+    }
+    
+    // Add today to history if not already there
+    if (!newStreakHistory.includes(today)) {
+      newStreakHistory.push(today)
+      // Keep only last 30 days
+      if (newStreakHistory.length > 30) {
+        newStreakHistory = newStreakHistory.slice(-30)
+      }
+    }
+    
+    return {
+      currentStreak: newCurrentStreak,
+      longestStreak: Math.max(currentStreak.longestStreak, newCurrentStreak),
+      lastActiveDate: today,
+      streakHistory: newStreakHistory
+    }
+  }
+
+  const getTopicCompletion = (topic: string): TopicCompletion | null => {
+    if (!userProgress?.completedTopics) return null
+    return userProgress.completedTopics.find(t => t.topic === topic) || null
+  }
+
+  const isDimensionCompleted = (topic: string, dimension: string): boolean => {
+    const completion = getTopicCompletion(topic)
+    return completion ? completion.dimensionsCompleted.includes(dimension) : false
+  }
+
   // Progress tracking functions
   const startLearningSession = (topic: string, dimension: string, grade: number) => {
     const session: LearningSession = {
@@ -176,6 +279,13 @@ export default function Home() {
       totalTimeSpent: 0,
       topicsExplored: 0,
       favoriteTopics: [],
+      completedTopics: [],
+      learningStreak: {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastActiveDate: '',
+        streakHistory: []
+      },
       createdAt: new Date().toISOString(),
       lastActivity: new Date().toISOString()
     }
@@ -185,6 +295,8 @@ export default function Home() {
       sessions: [...currentProgress.sessions, completedSession],
       totalTimeSpent: currentProgress.totalTimeSpent + (completedSession.timeSpent || 0),
       topicsExplored: new Set([...currentProgress.sessions.map(s => s.topic), completedSession.topic]).size,
+      completedTopics: updateTopicCompletion(currentProgress.completedTopics, completedSession.topic, completedSession.dimension),
+      learningStreak: updateLearningStreak(currentProgress.learningStreak),
       lastActivity: new Date().toISOString()
     }
 
@@ -413,8 +525,8 @@ export default function Home() {
                       <span>Save your favorite topics and come back anytime</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-purple-500">🏆</span>
-                      <span>Earn achievements and build learning streaks</span>
+                      <span className="text-purple-500">🔥</span>
+                      <span>Build learning streaks and earn achievements</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-orange-500">🎯</span>
@@ -520,6 +632,9 @@ export default function Home() {
                     {userProgress && userProgress.sessions.length > 0 && (
                       <div className="text-xs text-green-600 mt-1">
                         📚 {userProgress.topicsExplored} topics explored • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min learning
+                        {userProgress.learningStreak.currentStreak > 0 && (
+                          <span className="ml-2">🔥 {userProgress.learningStreak.currentStreak} day streak!</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -639,29 +754,79 @@ export default function Home() {
                   <h3 className="text-2xl font-bold text-blue-700 mb-4">
                     📚 {selectedTopic}
                   </h3>
+                  
+                  {/* Topic Progress for Logged-in Users */}
+                  {userProfile && (() => {
+                    const completion = getTopicCompletion(selectedTopic)
+                    const completedCount = completion ? completion.dimensionsCompleted.length : 0
+                    const totalCount = availableDimensions.length || 5
+                    const progressPercent = (completedCount / totalCount) * 100
+                    
+                    if (completedCount > 0) {
+                      return (
+                        <div className="mb-4 p-3 bg-white rounded-xl shadow-sm">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-600">Topic Progress</span>
+                            <span className="text-sm font-bold text-blue-600">
+                              {completedCount}/{totalCount} dimensions
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${progressPercent}%` }}
+                            ></div>
+                          </div>
+                          {completion?.isFullyComplete && (
+                            <div className="mt-2 text-center">
+                              <span className="text-sm font-bold text-green-600">
+                                🎉 Topic Complete! Great job exploring {selectedTopic}!
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+                  
                   <p className="text-gray-600 mb-6">Choose how you want to explore:</p>
                   
                   <div className="space-y-3">
-                    {availableDimensions.map((dimension, index) => (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setSelectedDimension(dimension.name)
-                          setContent(null) // Clear current content when selecting new dimension
-                        }}
-                        disabled={loading}
-                        className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 ${
-                          selectedDimension === dimension.name
-                            ? 'border-blue-600 bg-gradient-to-r from-blue-100 to-blue-200 shadow-lg transform scale-105 ring-2 ring-blue-300'
-                            : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-                        }`}
-                      >
-                        <div className="font-bold text-blue-700">
-                          {dimension.emoji} {dimension.name}
-                        </div>
-                        <div className="text-sm text-gray-500">{dimension.description}</div>
-                      </button>
-                    ))}
+                    {availableDimensions.map((dimension, index) => {
+                      const isCompleted = userProfile ? isDimensionCompleted(selectedTopic, dimension.name) : false
+                      const isSelected = selectedDimension === dimension.name
+                      
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            setSelectedDimension(dimension.name)
+                            setContent(null) // Clear current content when selecting new dimension
+                          }}
+                          disabled={loading}
+                          className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 relative ${
+                            isSelected
+                              ? (isCompleted 
+                                  ? 'border-green-600 bg-gradient-to-r from-green-100 to-green-200 shadow-lg transform scale-105 ring-2 ring-green-300' 
+                                  : 'border-blue-600 bg-gradient-to-r from-blue-100 to-blue-200 shadow-lg transform scale-105 ring-2 ring-blue-300')
+                              : (isCompleted 
+                                  ? 'border-green-300 bg-gradient-to-r from-green-50 to-green-100 hover:border-green-400' 
+                                  : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50')
+                          }`}
+                        >
+                          <div className={`font-bold ${
+                            isCompleted ? 'text-green-700' : 'text-blue-700'
+                          }`}>
+                            {dimension.emoji} {dimension.name}
+                            {isCompleted && (
+                              <span className="ml-2 text-green-600">✅</span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-500">{dimension.description}</div>
+                        </button>
+                      )
+                    })}
                   </div>
 
                   <button
