@@ -195,6 +195,14 @@ export default function Home() {
   }
 
   const submitFeedback = (rating: 'thumbs_up' | 'thumbs_down') => {
+    // If user has no profile, show login prompt instead
+    if (!userProfile) {
+      setShowFeedback(false)
+      setShowProfileSetup(true)
+      return
+    }
+
+    // If user has profile, save feedback normally
     if (!userProgress || userProgress.sessions.length === 0) return
 
     const updatedSessions = [...userProgress.sessions]
@@ -348,9 +356,12 @@ export default function Home() {
       const data: ContentResponse = await response.json()
       setContent(data)
       
-      // Complete learning session and show feedback (only if profile exists)
+      // Complete learning session and show feedback for all users
       if (userProfile) {
         completeLearningSession(data)
+      } else {
+        // Show feedback for anonymous users too
+        setShowFeedback(true)
       }
     } catch (err) {
       setError('Unable to load content. Please try again!')
@@ -425,9 +436,32 @@ export default function Home() {
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
               <div className="text-center mb-6">
                 <h2 className="text-4xl font-black text-blue-700 mb-2">
-                  Welcome to CurioLab! 🔬
+                  Unlock Your Learning Journey! 🚀
                 </h2>
-                <p className="text-gray-600">Let's create your learning profile</p>
+                <p className="text-gray-600 mb-4">Create a profile to supercharge your experience</p>
+                
+                {/* Benefits */}
+                <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-4 mb-4 text-left">
+                  <h3 className="font-bold text-blue-700 mb-2">Why create a profile?</h3>
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">📊</span>
+                      <span>Track your learning progress and time spent</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-500">⭐</span>
+                      <span>Save your favorite topics and come back anytime</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-purple-500">🏆</span>
+                      <span>Earn achievements and build learning streaks</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-orange-500">🎯</span>
+                      <span>Get personalized content recommendations</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -493,9 +527,17 @@ export default function Home() {
                 <button
                   onClick={createProfile}
                   disabled={profileForm.name.trim().length < 2}
-                  className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                  className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mb-3"
                 >
                   🚀 Start Learning Adventure!
+                </button>
+
+                {/* Dismiss Option */}
+                <button
+                  onClick={() => setShowProfileSetup(false)}
+                  className="w-full text-gray-500 hover:text-gray-700 py-2 text-sm font-medium transition-colors"
+                >
+                  Continue exploring without profile
                 </button>
               </div>
             </div>
