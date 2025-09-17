@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Head from 'next/head'
+import analytics from '../lib/analytics'
 
 interface ContentResponse {
   topic: string
@@ -94,17 +95,32 @@ export default function Home() {
   // Load profile and progress from localStorage on mount
   useEffect(() => {
     const savedProfile = localStorage.getItem('curiolab-profile')
+    let hasProfile = false
     if (savedProfile) {
       const profile = JSON.parse(savedProfile)
       setUserProfile(profile)
       setSelectedSkillLevel(profile.skill_level || 'Explorer') // Use profile skill level as default
+      hasProfile = true
+      
+      // Identify user in analytics
+      analytics.identify(`user_${profile.createdAt}`, {
+        skill_level: profile.skill_level,
+        avatar: profile.avatar,
+        created_at: profile.createdAt
+      })
     }
 
     const savedProgress = localStorage.getItem('curiolab-progress')
+    let returningUser = false
     if (savedProgress) {
       const progress = JSON.parse(savedProgress)
       setUserProgress(progress)
+      returningUser = progress.sessions.length > 0
     }
+    
+    // Track session start
+    analytics.sessionStarted(hasProfile, returningUser)
+    
     // No longer auto-show profile setup - let users explore first
   }, [])
 
@@ -127,6 +143,14 @@ export default function Home() {
     setSelectedSkillLevel(newProfile.skill_level)
     setShowProfileSetup(false)
     setError('')
+    
+    // Track profile creation
+    analytics.identify(`user_${newProfile.createdAt}`, {
+      skill_level: newProfile.skill_level,
+      avatar: newProfile.avatar,
+      created_at: newProfile.createdAt
+    })
+    analytics.profileCreated(newProfile.skill_level, newProfile.avatar)
   }
 
   const updateProfile = (updates: Partial<UserProfile>) => {
@@ -307,6 +331,9 @@ export default function Home() {
   }
 
   const submitFeedback = (rating: 'thumbs_up' | 'thumbs_down') => {
+    // Track feedback regardless of profile status
+    analytics.feedbackGiven(selectedTopic, selectedDimension, selectedSkillLevel, rating, !!userProfile)
+    
     // If user has no profile, show login prompt instead
     if (!userProfile) {
       setShowFeedback(false)
@@ -392,12 +419,18 @@ export default function Home() {
     setSelectedTopic(topic)
     setCustomTopic('')
     generateDimensionsForTopic(topic)
+    
+    // Track topic selection
+    analytics.topicSelected(topic, 'suggestion')
   }
 
   const handleCustomTopicSubmit = () => {
     if (customTopic.trim().length >= 2) {
       setSelectedTopic(customTopic.trim())
       generateDimensionsForTopic(customTopic.trim())
+      
+      // Track custom topic selection
+      analytics.topicSelected(customTopic.trim(), 'custom')
     }
   }
 
@@ -446,6 +479,8 @@ export default function Home() {
     setError('')
     setShowFeedback(false) // Reset feedback state for new content generation
     
+    const startTime = Date.now()
+    
     // Start tracking learning session
     startLearningSession(selectedTopic, selectedDimension, selectedSkillLevel)
     
@@ -467,7 +502,12 @@ export default function Home() {
       }
 
       const data: ContentResponse = await response.json()
+      const generationTime = Date.now() - startTime
+      
       setContent(data)
+      
+      // Track successful content generation
+      analytics.contentGenerated(selectedTopic, selectedDimension, selectedSkillLevel, data.word_count, generationTime)
       
       // Complete learning session and show feedback for all users
       if (userProfile) {
@@ -479,6 +519,9 @@ export default function Home() {
     } catch (err) {
       setError('Unable to load content. Please try again!')
       setCurrentSession(null) // Clear session on error
+      
+      // Track content generation failure
+      analytics.contentGenerationFailed(selectedTopic, selectedDimension, selectedSkillLevel, err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -885,6 +928,9 @@ export default function Home() {
                             setSelectedDimension(dimension.name)
                             setContent(null) // Clear current content when selecting new dimension
                             setShowFeedback(false) // Reset feedback when switching dimensions
+                            
+                            // Track dimension selection
+                            analytics.dimensionChosen(selectedTopic, dimension.name)
                           }}
                           disabled={loading}
                           className={`w-full text-left p-3 lg:p-4 rounded-xl border-2 transition-all duration-200 disabled:opacity-50 relative touch-manipulation min-h-[60px] lg:min-h-[auto] ${
@@ -935,11 +981,15 @@ export default function Home() {
                             <button
                               key={level}
                               onClick={() => {
+                                const previousLevel = selectedSkillLevel
                                 setSelectedSkillLevel(level)
                                 if (content) {
                                   setContent(null) // Clear content to allow re-generation with new skill level
                                   setShowFeedback(false) // Reset feedback when changing skill level
                                 }
+                                
+                                // Track skill level change
+                                analytics.skillLevelChanged(previousLevel, level, selectedTopic)
                               }}
                               className={`flex-1 px-4 py-3 lg:px-6 lg:py-4 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
                                 selectedSkillLevel === level
