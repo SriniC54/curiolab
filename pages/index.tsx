@@ -4,7 +4,7 @@ import Head from 'next/head'
 interface ContentResponse {
   topic: string
   dimension: string
-  grade_level: number
+  skill_level: string
   content: string
   readability_score: number
   word_count: number
@@ -20,7 +20,7 @@ interface ContentResponse {
 
 interface UserProfile {
   name: string
-  grade: number
+  skill_level: string
   avatar: string
   createdAt: string
 }
@@ -29,7 +29,7 @@ interface LearningSession {
   id: string
   topic: string
   dimension: string
-  grade: number
+  skill_level: string
   startedAt: string
   completedAt?: string
   timeSpent?: number
@@ -71,7 +71,7 @@ export default function Home() {
   const [showProfileSetup, setShowProfileSetup] = useState(false)
   const [profileForm, setProfileForm] = useState({
     name: '',
-    grade: 4,
+    skill_level: 'Explorer',
     avatar: '🎓'
   })
 
@@ -85,7 +85,7 @@ export default function Home() {
   const [customTopic, setCustomTopic] = useState('')
   const [availableDimensions, setAvailableDimensions] = useState<any[]>([])
   const [selectedDimension, setSelectedDimension] = useState('')
-  const [selectedGrade, setSelectedGrade] = useState(4)
+  const [selectedSkillLevel, setSelectedSkillLevel] = useState('Explorer')
   const [content, setContent] = useState<ContentResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingDimensions, setLoadingDimensions] = useState(false)
@@ -97,7 +97,7 @@ export default function Home() {
     if (savedProfile) {
       const profile = JSON.parse(savedProfile)
       setUserProfile(profile)
-      setSelectedGrade(profile.grade) // Use profile grade as default
+      setSelectedSkillLevel(profile.skill_level || 'Explorer') // Use profile skill level as default
     }
 
     const savedProgress = localStorage.getItem('curiolab-progress')
@@ -117,14 +117,14 @@ export default function Home() {
 
     const newProfile: UserProfile = {
       name: profileForm.name.trim(),
-      grade: profileForm.grade,
+      skill_level: profileForm.skill_level,
       avatar: profileForm.avatar,
       createdAt: new Date().toISOString()
     }
 
     localStorage.setItem('curiolab-profile', JSON.stringify(newProfile))
     setUserProfile(newProfile)
-    setSelectedGrade(newProfile.grade)
+    setSelectedSkillLevel(newProfile.skill_level)
     setShowProfileSetup(false)
     setError('')
   }
@@ -135,8 +135,8 @@ export default function Home() {
     const updatedProfile = { ...userProfile, ...updates }
     localStorage.setItem('curiolab-profile', JSON.stringify(updatedProfile))
     setUserProfile(updatedProfile)
-    if (updates.grade) {
-      setSelectedGrade(updates.grade)
+    if (updates.skill_level) {
+      setSelectedSkillLevel(updates.skill_level)
     }
   }
 
@@ -242,12 +242,12 @@ export default function Home() {
   }
 
   // Progress tracking functions
-  const startLearningSession = (topic: string, dimension: string, grade: number) => {
+  const startLearningSession = (topic: string, dimension: string, skill_level: string) => {
     const session: LearningSession = {
       id: Date.now().toString(),
       topic,
       dimension,
-      grade,
+      skill_level,
       startedAt: new Date().toISOString(),
       wordCount: 0,
       readabilityScore: 0
@@ -447,7 +447,7 @@ export default function Home() {
     setShowFeedback(false) // Reset feedback state for new content generation
     
     // Start tracking learning session
-    startLearningSession(selectedTopic, selectedDimension, selectedGrade)
+    startLearningSession(selectedTopic, selectedDimension, selectedSkillLevel)
     
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`, {
@@ -458,7 +458,7 @@ export default function Home() {
         body: JSON.stringify({
           topic: selectedTopic,
           dimension: selectedDimension,
-          grade_level: selectedGrade
+          skill_level: selectedSkillLevel
         })
       })
 
@@ -519,7 +519,7 @@ export default function Home() {
                       <div className="text-4xl">{userProfile.avatar}</div>
                       <div className="text-left">
                         <h3 className="font-bold text-blue-700 text-xl">{userProfile.name}</h3>
-                        <p className="text-gray-600">Grade {userProfile.grade} Explorer</p>
+                        <p className="text-gray-600">{userProfile.skill_level} Explorer</p>
                       </div>
                     </div>
                   </div>
@@ -618,23 +618,23 @@ export default function Home() {
                       />
                     </div>
 
-                    {/* Grade Selection */}
+                    {/* Skill Level Selection */}
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">
-                        What grade are you in?
+                        What's your learning level?
                       </label>
                       <div className="flex gap-2 lg:gap-3">
-                        {[3, 4, 5].map((grade) => (
+                        {['Beginner', 'Explorer', 'Expert'].map((level) => (
                           <button
-                            key={grade}
-                            onClick={() => setProfileForm({...profileForm, grade})}
+                            key={level}
+                            onClick={() => setProfileForm({...profileForm, skill_level: level})}
                             className={`flex-1 py-3 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
-                              profileForm.grade === grade
+                              profileForm.skill_level === level
                                 ? 'bg-green-500 text-white shadow-lg scale-105'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                             }`}
                           >
-                            Grade {grade}
+                            {level}
                           </button>
                         ))}
                       </div>
@@ -707,7 +707,7 @@ export default function Home() {
                         <h3 className="font-bold text-blue-700 text-xl md:text-2xl truncate">
                           Hi {userProfile.name}! 👋
                         </h3>
-                        <p className="text-gray-600 text-base md:text-lg">Grade {userProfile.grade} Explorer</p>
+                        <p className="text-gray-600 text-base md:text-lg">{userProfile.skill_level} Explorer</p>
                         {userProgress && userProgress.sessions.length > 0 && (
                           <div className="text-xs md:text-sm text-green-600 mt-2 space-y-1">
                             <div>📚 {userProgress.topicsExplored} topics • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min</div>
@@ -927,34 +927,34 @@ export default function Home() {
                         🌟 {selectedTopic} - {selectedDimension}
                       </h2>
                       
-                      {/* Grade Selection - Always Visible */}
+                      {/* Skill Level Selection - Always Visible */}
                       <div className="mb-6 lg:mb-8">
-                        <p className="text-base lg:text-lg text-gray-600 mb-3 lg:mb-4">Pick your grade level:</p>
+                        <p className="text-base lg:text-lg text-gray-600 mb-3 lg:mb-4">Pick your learning level:</p>
                         <div className="flex gap-2 lg:gap-4">
-                          {[3, 4, 5].map((grade) => (
+                          {['Beginner', 'Explorer', 'Expert'].map((level) => (
                             <button
-                              key={grade}
+                              key={level}
                               onClick={() => {
-                                setSelectedGrade(grade)
+                                setSelectedSkillLevel(level)
                                 if (content) {
-                                  setContent(null) // Clear content to allow re-generation with new grade
-                                  setShowFeedback(false) // Reset feedback when changing grade
+                                  setContent(null) // Clear content to allow re-generation with new skill level
+                                  setShowFeedback(false) // Reset feedback when changing skill level
                                 }
                               }}
                               className={`flex-1 px-4 py-3 lg:px-6 lg:py-4 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
-                                selectedGrade === grade
+                                selectedSkillLevel === level
                                   ? 'bg-green-500 text-white shadow-lg scale-105'
                                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                               }`}
                             >
-                              Grade {grade}
+                              {level}
                             </button>
                           ))}
                         </div>
                       </div>
 
                       {/* Action Button */}
-                      {selectedGrade && !content && (
+                      {selectedSkillLevel && !content && (
                         <button
                           onClick={generateContent}
                           disabled={loading}
@@ -978,7 +978,7 @@ export default function Home() {
                           <div className="flex items-center justify-between">
                             <div>
                               <h4 className="font-bold text-green-700 text-lg">
-                                📖 {selectedTopic} - {selectedDimension} (Grade {content.grade_level})
+                                📖 {selectedTopic} - {selectedDimension} ({content.skill_level})
                               </h4>
                             </div>
                             <button

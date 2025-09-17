@@ -33,12 +33,12 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 class ContentRequest(BaseModel):
     topic: str
     dimension: str
-    grade_level: int
+    skill_level: str
 
 class ContentResponse(BaseModel):
     topic: str
     dimension: str
-    grade_level: int
+    skill_level: str
     content: str
     readability_score: float
     word_count: int
@@ -108,13 +108,13 @@ async def generate_content(request: ContentRequest):
     if not is_topic_appropriate(request.topic):
         raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
     
-    # Only allow grades 3-5
-    if request.grade_level not in [3, 4, 5]:
-        raise HTTPException(status_code=400, detail="Only grades 3-5 are supported in MVP")
+    # Only allow specific skill levels
+    if request.skill_level not in ["Beginner", "Explorer", "Expert"]:
+        raise HTTPException(status_code=400, detail="Only Beginner, Explorer, and Expert skill levels are supported")
     
     try:
         # Generate content using OpenAI
-        content = await generate_topic_content(request.topic, request.dimension, request.grade_level)
+        content = await generate_topic_content(request.topic, request.dimension, request.skill_level)
         
         # Get relevant images from Unsplash
         images = await get_unsplash_images(request.topic, request.dimension, 3)
@@ -126,7 +126,7 @@ async def generate_content(request: ContentRequest):
         return ContentResponse(
             topic=request.topic,
             dimension=request.dimension,
-            grade_level=request.grade_level,
+            skill_level=request.skill_level,
             content=content,
             readability_score=fk_score,
             word_count=word_count,
@@ -186,40 +186,46 @@ Science, History, Geography, Culture, Environment"""
         # Fallback dimensions if AI generation fails
         return ["Science", "History", "Geography", "Culture", "Environment"]
 
-async def generate_topic_content(topic: str, dimension: str, grade_level: int) -> str:
-    """Generate educational content for any topic, dimension, and grade level using AI."""
+async def generate_topic_content(topic: str, dimension: str, skill_level: str) -> str:
+    """Generate educational content for any topic, dimension, and skill level using AI."""
     
-    # Grade-specific vocabulary and complexity guidelines
-    grade_guidelines = {
-        3: {
-            "vocab": "simple words, short sentences",
-            "examples": "everyday examples kids can see and touch",
+    # Skill-specific vocabulary and complexity guidelines with exclusive content focus
+    skill_guidelines = {
+        "Beginner": {
+            "vocab": "simple, everyday words and short sentences",
+            "examples": "basic examples kids can see and touch in their daily lives",
             "sentence_length": "8-12 words per sentence",
             "target_words": "200-300 words",
             "target_lines": "10-12 lines",
-            "paragraphs": "2-3 short paragraphs"
+            "paragraphs": "2-3 short paragraphs",
+            "focus": "fundamental concepts, 'what is it?' and basic 'why?'",
+            "avoid": "complex processes, detailed explanations, or advanced terminology"
         },
-        4: {
-            "vocab": "slightly more complex words, medium sentences", 
-            "examples": "relatable examples with basic science terms",
+        "Explorer": {
+            "vocab": "intermediate vocabulary with some subject-specific terms explained", 
+            "examples": "engaging examples with connections to how things work",
             "sentence_length": "10-15 words per sentence",
             "target_words": "400-500 words",
             "target_lines": "18-22 lines", 
-            "paragraphs": "3-4 paragraphs"
+            "paragraphs": "3-4 paragraphs",
+            "focus": "'how does it work?' and 'what makes it special?' with processes and connections",
+            "avoid": "overly simple explanations OR highly technical details covered in Expert level"
         },
-        5: {
-            "vocab": "grade-level vocabulary, varied sentence structures, some advanced terms with explanations",
-            "examples": "detailed examples with scientific explanations and real-world connections",
+        "Expert": {
+            "vocab": "advanced vocabulary, technical terms with explanations, varied sentence structures",
+            "examples": "complex examples with scientific explanations, real-world applications, and deeper connections",
             "sentence_length": "12-20 words per sentence", 
             "target_words": "700-900 words",
             "target_lines": "full page content with multiple sections",
-            "paragraphs": "5-7 well-developed paragraphs with clear section breaks"
+            "paragraphs": "5-7 well-developed paragraphs with clear section breaks",
+            "focus": "'why does this matter?' with advanced concepts, implications, and sophisticated analysis",
+            "avoid": "basic explanations covered in Beginner/Explorer levels"
         }
     }
     
-    guidelines = grade_guidelines[grade_level]
+    guidelines = skill_guidelines[skill_level]
     
-    system_prompt = f"""You are an expert children's educational writer who creates engaging, safe, age-appropriate magazine-style content like National Geographic Kids or Highlights.
+    system_prompt = f"""You are an expert educational content writer who creates engaging, safe, age-appropriate content like National Geographic Kids or Highlights.
 
 CRITICAL SAFETY REQUIREMENTS:
 - Content must be 100% safe and appropriate for children ages 8-18
@@ -231,10 +237,13 @@ CRITICAL SAFETY REQUIREMENTS:
 - Use encouraging, wonder-filled language that builds curiosity safely
 - If any aspect of the topic could be inappropriate, focus only on safe educational angles
 
-GRADE LEVEL: {grade_level}
+SKILL LEVEL: {skill_level}
 TOPIC: {topic.title()} - {dimension.title()}
 
-CONTENT REQUIREMENTS:
+EXCLUSIVE CONTENT REQUIREMENTS FOR {skill_level.upper()} LEVEL:
+- FOCUS ON: {guidelines['focus']}
+- AVOID: {guidelines['avoid']}
+- This content should be UNIQUE to the {skill_level} level - do NOT repeat concepts from other skill levels
 - Write EXACTLY {guidelines['target_words']} total words (this is crucial!)
 - Create {guidelines['paragraphs']} with clear section headings
 - Structure like a children's magazine article with multiple sections
@@ -260,26 +269,28 @@ WRITING STYLE:
 
 Focus on the {dimension} aspect of {topic} and make it feel like the most interesting magazine article they've ever read about this topic."""
 
-    # AI generates the specific content prompt based on topic and dimension
-    content_prompt = f"""Write a fascinating magazine article about {topic} focusing on the {dimension} aspects.
+    # AI generates the specific content prompt based on topic, dimension, and skill level
+    content_prompt = f"""Write a fascinating {skill_level}-level magazine article about {topic} focusing on the {dimension} aspects.
 
-REQUIREMENTS:
-- Make it perfect for grade {grade_level} students who are curious about {topic}
-- Focus specifically on {dimension} aspects of {topic}
-- Include multiple sections with clear headings
-- Add surprising facts and "did you know?" moments
-- Use vivid descriptions that help kids visualize what you're describing
-- Include real examples and stories that connect to their world
+EXCLUSIVE {skill_level.upper()} LEVEL REQUIREMENTS:
+- Make it perfect for {skill_level} learners who are curious about {topic}
+- {guidelines['focus']} 
+- AVOID: {guidelines['avoid']}
+- Focus specifically on {dimension} aspects of {topic} at the {skill_level} level
+- Include multiple sections with clear headings appropriate for {skill_level} complexity
+- Add surprising facts and insights perfect for {skill_level} understanding
+- Use vivid descriptions that help learners visualize at their {skill_level} comprehension
+- Include real examples and stories that connect to {skill_level} learners
 - Create natural section breaks (these will have images added later)
 
-STRUCTURE YOUR ARTICLE:
-1. **Catchy opening** that hooks the reader immediately
-2. **3-4 main sections** with subheadings covering different {dimension} aspects of {topic}
-3. **Fun facts section** with amazing details kids will want to share
-4. **Real-world connections** showing how this relates to their daily lives
-5. **Inspiring conclusion** that makes them want to learn more
+STRUCTURE YOUR {skill_level.upper()} ARTICLE:
+1. **Catchy opening** that hooks {skill_level} readers immediately
+2. **3-4 main sections** with subheadings covering {skill_level}-appropriate {dimension} aspects of {topic}
+3. **Facts section** with {skill_level}-appropriate amazing details they'll want to share
+4. **Real-world connections** showing how this relates to {skill_level} learners' understanding
+5. **Inspiring conclusion** that makes them want to explore the next skill level
 
-Remember: This should feel like the coolest magazine article about {topic} they've ever read, specifically exploring the {dimension} side of this amazing topic!"""
+CRITICAL: This should be EXCLUSIVE {skill_level} content - completely different from what Beginner, Explorer, or Expert levels would cover. Focus only on {guidelines['focus']} and avoid {guidelines['avoid']}."""
 
     response = client.chat.completions.create(
         model="gpt-4",
