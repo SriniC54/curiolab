@@ -1025,44 +1025,70 @@ export default function Home() {
                       {/* Content Status */}
                       {content && (
                         <div className="mb-6 p-4 bg-white rounded-xl shadow-sm border-l-4 border-green-500">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center">
                             <div>
                               <h4 className="font-bold text-green-700 text-lg">
                                 📖 {selectedTopic} - {selectedDimension} ({content.skill_level})
                               </h4>
+                              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                                <span>📝 {content.word_count} words</span>
+                                <span>•</span>
+                                <span>📖 {Math.ceil(content.word_count / 150)} min read</span>
+                                <span>•</span>
+                                <span>🎯 Grade {Math.round(content.readability_score / 10)} level</span>
+                              </div>
                             </div>
-                            <button
-                              onClick={() => setContent(null)}
-                              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium"
-                            >
-                              🔄 Generate New
-                            </button>
                           </div>
                         </div>
                       )}
 
                       {content && (
                         <div>
-                          {/* Content Display */}
-                          <div className="bg-white rounded-xl p-4 lg:p-8 shadow-sm flex-1 overflow-y-auto">
-                            <div className="prose prose-base lg:prose-lg max-w-none text-gray-900 leading-relaxed whitespace-pre-wrap">
+                          {/* Enhanced Content Display */}
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 lg:p-8 shadow-lg border border-blue-200 flex-1 overflow-y-auto">
+                            <div className="mb-4">
+                              <h3 className="text-2xl lg:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 mb-3">
+                                📚 {selectedTopic}: {selectedDimension}
+                              </h3>
+                            </div>
+                            
+                            <div className="prose prose-lg max-w-none">
                               <style jsx>{`
                                 .prose h1, .prose h2, .prose h3 {
                                   color: #1e40af;
-                                  font-weight: bold;
-                                  margin-top: 1.5rem;
+                                  font-weight: 800;
+                                  margin-top: 2rem;
                                   margin-bottom: 1rem;
+                                  text-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                                  font-size: 1.5rem;
                                 }
                                 .prose p {
-                                  margin-bottom: 1.25rem;
-                                  line-height: 1.75;
+                                  margin-bottom: 1.5rem;
+                                  line-height: 1.8;
+                                  font-size: 1.125rem;
+                                  color: #374151;
                                 }
                                 .prose strong {
-                                  color: #065f46;
+                                  color: #059669;
                                   font-weight: 700;
+                                  background: linear-gradient(120deg, #ecfdf5 0%, #d1fae5 100%);
+                                  padding: 0.2rem 0.4rem;
+                                  border-radius: 0.375rem;
+                                  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                                }
+                                .prose {
+                                  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
                                 }
                               `}</style>
-                              {content.content}
+                              <div className="space-y-4 text-gray-800 leading-relaxed">
+                                {content.content.split('\n\n').map((paragraph, index) => (
+                                  <div key={index} className="p-4 bg-white/60 rounded-xl hover:bg-white/80 transition-all duration-200 border border-white/50">
+                                    <p className="text-lg lg:text-xl leading-relaxed font-medium whitespace-pre-wrap text-gray-700">
+                                      {paragraph}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
 
                             {/* Feedback Buttons - Bottom of Content */}

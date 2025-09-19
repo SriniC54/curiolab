@@ -8,6 +8,8 @@ import textstat
 import json
 import requests
 import random
+import hashlib
+from pathlib import Path
 
 load_dotenv()
 
@@ -30,6 +32,60 @@ app.add_middleware(
 # Initialize OpenAI client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# Cache directory setup
+CACHE_DIR = Path("content_cache")
+CACHE_DIR.mkdir(exist_ok=True)
+
+def get_cache_key(topic: str, dimension: str, skill_level: str) -> str:
+    """Generate a consistent cache key for content."""
+    # Normalize inputs to handle variations in capitalization/spacing
+    normalized = f"{topic.lower().strip()}-{dimension.lower().strip()}-{skill_level.lower().strip()}"
+    # Use hash to handle special characters and ensure valid filename
+    cache_hash = hashlib.md5(normalized.encode()).hexdigest()[:8]
+    return f"{normalized.replace(' ', '_')}-{cache_hash}"
+
+def get_cached_content(topic: str, dimension: str, skill_level: str) -> dict | None:
+    """Retrieve cached content if it exists."""
+    cache_key = get_cache_key(topic, dimension, skill_level)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    
+    try:
+        if cache_file.exists():
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cached_data = json.load(f)
+                print(f"✅ Cache HIT for {topic}-{dimension}-{skill_level}")
+                return cached_data
+    except Exception as e:
+        print(f"❌ Cache read error for {cache_key}: {e}")
+    
+    print(f"💭 Cache MISS for {topic}-{dimension}-{skill_level}")
+    return None
+
+def cache_content(topic: str, dimension: str, skill_level: str, content: str, word_count: int, readability_score: float) -> None:
+    """Cache generated content for future use."""
+    cache_key = get_cache_key(topic, dimension, skill_level)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    
+    cache_data = {
+        "topic": topic,
+        "dimension": dimension,
+        "skill_level": skill_level,
+        "content": content,
+        "word_count": word_count,
+        "readability_score": readability_score,
+        "cached_at": json.dumps({"timestamp": "now"})  # Will be replaced with actual timestamp
+    }
+    
+    try:
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            # Add actual timestamp
+            import datetime
+            cache_data["cached_at"] = datetime.datetime.now().isoformat()
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        print(f"💾 Cached content for {topic}-{dimension}-{skill_level}")
+    except Exception as e:
+        print(f"❌ Cache write error for {cache_key}: {e}")
+
 class ContentRequest(BaseModel):
     topic: str
     dimension: str
@@ -47,6 +103,29 @@ class ContentResponse(BaseModel):
 @app.get("/")
 async def root():
     return {"message": "CurioLab API is running!"}
+
+@app.get("/cache-stats")
+async def get_cache_stats():
+    """Get cache statistics for monitoring."""
+    try:
+        cache_files = list(CACHE_DIR.glob("*.json"))
+        total_cached = len(cache_files)
+        
+        # Calculate cache size
+        total_size = sum(f.stat().st_size for f in cache_files)
+        size_mb = round(total_size / (1024 * 1024), 2)
+        
+        return {
+            "total_cached_content": total_cached,
+            "cache_size_mb": size_mb,
+            "cache_directory": str(CACHE_DIR.absolute()),
+            "status": "healthy"
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "status": "error"
+        }
 
 def is_topic_appropriate(topic: str) -> bool:
     """Basic check for obviously inappropriate topics."""
@@ -113,7 +192,23 @@ async def generate_content(request: ContentRequest):
         raise HTTPException(status_code=400, detail="Only Beginner, Explorer, and Expert skill levels are supported")
     
     try:
-        # Generate content using OpenAI
+        # First, check if content is cached
+        cached_content = get_cached_content(request.topic, request.dimension, request.skill_level)
+        
+        if cached_content:
+            # Return cached content
+            images = await get_unsplash_images(request.topic, request.dimension, 3)
+            return ContentResponse(
+                topic=cached_content["topic"],
+                dimension=cached_content["dimension"],
+                skill_level=cached_content["skill_level"],
+                content=cached_content["content"],
+                readability_score=cached_content["readability_score"],
+                word_count=cached_content["word_count"],
+                images=images
+            )
+        
+        # If not cached, generate new content using OpenAI
         content = await generate_topic_content(request.topic, request.dimension, request.skill_level)
         
         # Get relevant images from Unsplash
@@ -122,6 +217,9 @@ async def generate_content(request: ContentRequest):
         # Calculate readability score
         fk_score = textstat.flesch_reading_ease(content)
         word_count = len(content.split())
+        
+        # Cache the newly generated content
+        cache_content(request.topic, request.dimension, request.skill_level, content, word_count, fk_score)
         
         return ContentResponse(
             topic=request.topic,
