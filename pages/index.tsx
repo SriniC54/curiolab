@@ -1030,13 +1030,6 @@ export default function Home() {
                               <h4 className="font-bold text-green-700 text-lg">
                                 📖 {selectedTopic} - {selectedDimension} ({content.skill_level})
                               </h4>
-                              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                                <span>📝 {content.word_count} words</span>
-                                <span>•</span>
-                                <span>📖 {Math.ceil(content.word_count / 150)} min read</span>
-                                <span>•</span>
-                                <span>🎯 Grade {Math.round(content.readability_score / 10)} level</span>
-                              </div>
                             </div>
                           </div>
                         </div>
@@ -1080,12 +1073,35 @@ export default function Home() {
                                   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
                                 }
                               `}</style>
-                              <div className="space-y-4 text-gray-800 leading-relaxed">
+                              <div className="space-y-6">
                                 {content.content.split('\n\n').map((paragraph, index) => (
-                                  <div key={index} className="p-4 bg-white/60 rounded-xl hover:bg-white/80 transition-all duration-200 border border-white/50">
-                                    <p className="text-lg lg:text-xl leading-relaxed font-medium whitespace-pre-wrap text-gray-700">
-                                      {paragraph}
-                                    </p>
+                                  <div key={index} className="relative p-6 bg-gradient-to-br from-white via-blue-50/30 to-purple-50/20 rounded-2xl hover:from-blue-50/40 hover:to-purple-50/30 transition-all duration-300 shadow-md hover:shadow-lg border border-blue-100/50 hover:border-blue-200">
+                                    {/* Decorative corner accent */}
+                                    <div className="absolute top-0 left-0 w-1 h-16 bg-gradient-to-b from-blue-400 to-purple-400 rounded-l-2xl"></div>
+                                    
+                                    <div className="text-gray-800 leading-relaxed whitespace-pre-wrap">
+                                      {paragraph.split('\n').map((line, lineIndex) => {
+                                        // Check if this line is a heading
+                                        const isHeading = /^[🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯].*:|^\*\*.*\*\*$/.test(line.trim());
+                                        
+                                        if (isHeading) {
+                                          return (
+                                            <h3 key={lineIndex} className="text-xl lg:text-2xl font-bold text-blue-700 mb-3 mt-2 first:mt-0" style={{fontFamily: 'Georgia, "Times New Roman", serif', textShadow: '0 1px 2px rgba(0,0,0,0.1)'}}>
+                                              {line.replace(/\*\*/g, '').trim()}
+                                            </h3>
+                                          );
+                                        }
+                                        
+                                        return (
+                                          <p key={lineIndex} className="text-lg lg:text-xl leading-relaxed font-medium text-gray-700 mb-3 last:mb-0" style={{fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'}}>
+                                            {line}
+                                          </p>
+                                        );
+                                      })}
+                                    </div>
+                                    
+                                    {/* Subtle bottom accent */}
+                                    <div className="absolute bottom-0 right-0 w-8 h-1 bg-gradient-to-r from-blue-300 to-purple-300 rounded-br-2xl opacity-60"></div>
                                   </div>
                                 ))}
                               </div>

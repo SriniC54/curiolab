@@ -293,9 +293,9 @@ async def generate_topic_content(topic: str, dimension: str, skill_level: str) -
             "vocab": "simple, everyday words and short sentences",
             "examples": "basic examples kids can see and touch in their daily lives",
             "sentence_length": "8-12 words per sentence",
-            "target_words": "200-300 words",
-            "target_lines": "10-12 lines",
-            "paragraphs": "2-3 short paragraphs",
+            "target_words": "300 words",
+            "target_lines": "12-15 lines",
+            "paragraphs": "3-4 short paragraphs",
             "focus": "fundamental concepts, 'what is it?' and basic 'why?'",
             "avoid": "complex processes, detailed explanations, or advanced terminology"
         },
@@ -303,9 +303,9 @@ async def generate_topic_content(topic: str, dimension: str, skill_level: str) -
             "vocab": "intermediate vocabulary with some subject-specific terms explained", 
             "examples": "engaging examples with connections to how things work",
             "sentence_length": "10-15 words per sentence",
-            "target_words": "400-500 words",
-            "target_lines": "18-22 lines", 
-            "paragraphs": "3-4 paragraphs",
+            "target_words": "500 words",
+            "target_lines": "20-25 lines", 
+            "paragraphs": "4-5 paragraphs",
             "focus": "'how does it work?' and 'what makes it special?' with processes and connections",
             "avoid": "overly simple explanations OR highly technical details covered in Expert level"
         },
@@ -313,9 +313,9 @@ async def generate_topic_content(topic: str, dimension: str, skill_level: str) -
             "vocab": "advanced vocabulary, technical terms with explanations, varied sentence structures",
             "examples": "complex examples with scientific explanations, real-world applications, and deeper connections",
             "sentence_length": "12-20 words per sentence", 
-            "target_words": "700-900 words",
-            "target_lines": "full page content with multiple sections",
-            "paragraphs": "5-7 well-developed paragraphs with clear section breaks",
+            "target_words": "1000 words",
+            "target_lines": "full page content with multiple comprehensive sections",
+            "paragraphs": "6-8 well-developed paragraphs with clear section breaks",
             "focus": "'why does this matter?' with advanced concepts, implications, and sophisticated analysis",
             "avoid": "basic explanations covered in Beginner/Explorer levels"
         }
@@ -349,13 +349,15 @@ EXCLUSIVE CONTENT REQUIREMENTS FOR {skill_level.upper()} LEVEL:
 - Keep sentences to {guidelines['sentence_length']}
 - Use {guidelines['examples']}
 
-MAGAZINE-STYLE STRUCTURE:
-- **Engaging Title/Hook**: Start with something that grabs attention
-- **Introduction Section**: Brief, exciting overview that builds curiosity  
-- **Main Sections**: 3-4 distinct sections with subheadings, each covering different aspects
-- **Fun Facts Box**: Include surprising, cool facts kids would love
-- **Real-World Connections**: How this relates to kids' lives today
-- **Conclusion**: End with wonder and questions that inspire further learning
+CONTENT STRUCTURE:
+- Start with an engaging introduction paragraph (no heading needed)
+- Create {guidelines['paragraphs']} main sections, each with:
+  * **Clear heading with emoji** (like "🔥 How Hot Are They?" or "🌿 What Do They Eat?")
+  * Immediately follow the heading with 2-3 paragraphs of detailed explanation
+  * Keep heading and content together in the same section
+- Include surprising facts and "wow" moments throughout
+- End with a concluding paragraph that inspires wonder
+- NO separate headings without content - always put content right after each heading
 
 WRITING STYLE:
 - Write like you're talking to curious, intelligent kids
