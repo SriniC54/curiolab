@@ -1074,36 +1074,61 @@ export default function Home() {
                                 }
                               `}</style>
                               <div className="space-y-6">
-                                {content.content.split('\n\n').map((paragraph, index) => (
-                                  <div key={index} className="relative p-6 bg-gradient-to-br from-white via-blue-50/30 to-purple-50/20 rounded-2xl hover:from-blue-50/40 hover:to-purple-50/30 transition-all duration-300 shadow-md hover:shadow-lg border border-blue-100/50 hover:border-blue-200">
-                                    {/* Decorative corner accent */}
-                                    <div className="absolute top-0 left-0 w-1 h-16 bg-gradient-to-b from-blue-400 to-purple-400 rounded-l-2xl"></div>
+                                {(() => {
+                                  // Split content and group headings with their following content
+                                  const sections = [];
+                                  const paragraphs = content.content.split('\n\n');
+                                  let currentSection = [];
+                                  
+                                  paragraphs.forEach((paragraph, index) => {
+                                    const isHeading = /^\*\*.*\*\*$/.test(paragraph.trim()) || 
+                                                     /^[🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯🏞️].*\*\*$/.test(paragraph.trim());
                                     
-                                    <div className="text-gray-800 leading-relaxed whitespace-pre-wrap">
-                                      {paragraph.split('\n').map((line, lineIndex) => {
-                                        // Check if this line is a heading
-                                        const isHeading = /^[🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯].*:|^\*\*.*\*\*$/.test(line.trim());
-                                        
-                                        if (isHeading) {
+                                    if (isHeading && currentSection.length > 0) {
+                                      // Start new section with this heading
+                                      sections.push(currentSection);
+                                      currentSection = [paragraph];
+                                    } else {
+                                      currentSection.push(paragraph);
+                                    }
+                                  });
+                                  
+                                  // Add the last section
+                                  if (currentSection.length > 0) {
+                                    sections.push(currentSection);
+                                  }
+                                  
+                                  return sections.map((section, sectionIndex) => (
+                                    <div key={sectionIndex} className="relative p-6 bg-gradient-to-br from-white via-blue-50/30 to-purple-50/20 rounded-2xl hover:from-blue-50/40 hover:to-purple-50/30 transition-all duration-300 shadow-md hover:shadow-lg border border-blue-100/50 hover:border-blue-200">
+                                      {/* Decorative corner accent */}
+                                      <div className="absolute top-0 left-0 w-1 h-16 bg-gradient-to-b from-blue-400 to-purple-400 rounded-l-2xl"></div>
+                                      
+                                      <div className="text-gray-800 leading-relaxed">
+                                        {section.map((paragraph, paragraphIndex) => {
+                                          const isHeading = /^\*\*.*\*\*$/.test(paragraph.trim()) || 
+                                                           /^[🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯🏞️].*\*\*$/.test(paragraph.trim());
+                                          
+                                          if (isHeading) {
+                                            return (
+                                              <h3 key={paragraphIndex} className="text-xl lg:text-2xl font-bold text-blue-700 mb-4" style={{fontFamily: 'Georgia, "Times New Roman", serif', textShadow: '0 1px 2px rgba(0,0,0,0.1)'}}>
+                                                {paragraph.replace(/\*\*/g, '').trim()}
+                                              </h3>
+                                            );
+                                          }
+                                          
                                           return (
-                                            <h3 key={lineIndex} className="text-xl lg:text-2xl font-bold text-blue-700 mb-3 mt-2 first:mt-0" style={{fontFamily: 'Georgia, "Times New Roman", serif', textShadow: '0 1px 2px rgba(0,0,0,0.1)'}}>
-                                              {line.replace(/\*\*/g, '').trim()}
-                                            </h3>
+                                            <p key={paragraphIndex} className="text-lg lg:text-xl leading-relaxed font-medium text-gray-700 mb-4 last:mb-0" style={{fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'}}>
+                                              {paragraph}
+                                            </p>
                                           );
-                                        }
-                                        
-                                        return (
-                                          <p key={lineIndex} className="text-lg lg:text-xl leading-relaxed font-medium text-gray-700 mb-3 last:mb-0" style={{fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'}}>
-                                            {line}
-                                          </p>
-                                        );
-                                      })}
+                                        })}
+                                      </div>
+                                      
+                                      {/* Subtle bottom accent */}
+                                      <div className="absolute bottom-0 right-0 w-8 h-1 bg-gradient-to-r from-blue-300 to-purple-300 rounded-br-2xl opacity-60"></div>
                                     </div>
-                                    
-                                    {/* Subtle bottom accent */}
-                                    <div className="absolute bottom-0 right-0 w-8 h-1 bg-gradient-to-r from-blue-300 to-purple-300 rounded-br-2xl opacity-60"></div>
-                                  </div>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
 
