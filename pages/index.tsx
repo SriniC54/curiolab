@@ -540,7 +540,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>CurioLab - Laboratory of Curiosity for Kids!</title>
+        <title>🦉 CurioLab - Laboratory of Curiosity for Kids!</title>
         <meta name="description" content="Interactive learning adventures for elementary students" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
@@ -618,7 +618,7 @@ export default function Home() {
                 <div>
                   <div className="text-center mb-6">
                     <h2 className="text-4xl font-black text-blue-700 mb-2">
-                      Unlock Your Learning Journey! 🚀
+                      🦉 Unlock Your Learning Journey! 🚀
                     </h2>
                     <p className="text-gray-600 mb-4">Create a profile to supercharge your experience</p>
                     
@@ -736,7 +736,7 @@ export default function Home() {
               {/* CurioLab Title - Top on Mobile, Right on Desktop */}
               <div className="flex justify-center lg:justify-end">
                 <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 text-center lg:text-right">
-                  🔬 CurioLab 🌟
+                  🔬 CurioLab 🦉
                 </h1>
               </div>
 
@@ -819,7 +819,7 @@ export default function Home() {
                 {/* Custom Topic Input */}
                 <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-3xl shadow-2xl p-8 mb-8 border-4 border-blue-200">
                   <h2 className="text-4xl font-black mb-6 text-center text-blue-800">
-                    ✨ What Do You Want to Learn About? ✨
+                    🦉 What Do You Want to Learn About? ✨
                   </h2>
                   <div className="flex flex-col items-center gap-4 max-w-2xl mx-auto">
                     <input
@@ -1041,7 +1041,7 @@ export default function Home() {
                           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 lg:p-8 shadow-lg border border-blue-200 flex-1 overflow-y-auto">
                             <div className="mb-4">
                               <h3 className="text-2xl lg:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 mb-3">
-                                📚 {selectedTopic}: {selectedDimension}
+                                🦉 {selectedTopic}: {selectedDimension}
                               </h3>
                             </div>
                             
@@ -1137,7 +1137,7 @@ export default function Home() {
                               <div className="mt-6 lg:mt-8 pt-4 lg:pt-6 border-t-2 border-gray-100">
                                 <div className="text-center">
                                   <h3 className="text-lg lg:text-xl font-bold text-blue-700 mb-4">
-                                    🎉 How was learning about {selectedTopic}?
+                                    🦉 How was learning about {selectedTopic}? 🎉
                                   </h3>
                                   
                                   <div className="flex justify-center gap-3 lg:gap-4">
