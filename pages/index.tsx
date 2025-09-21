@@ -1076,9 +1076,9 @@ export default function Home() {
                               <div className="space-y-6">
                                 {(() => {
                                   // Split content and group headings with their following content
-                                  const sections = [];
+                                  const sections: string[][] = [];
                                   const paragraphs = content.content.split('\n\n');
-                                  let currentSection = [];
+                                  let currentSection: string[] = [];
                                   
                                   paragraphs.forEach((paragraph, index) => {
                                     const isHeading = /^\*\*.*\*\*$/.test(paragraph.trim()) || 
