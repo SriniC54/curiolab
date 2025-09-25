@@ -63,7 +63,18 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       setAudio(audioElement)
       return audioElement
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate audio')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate audio'
+      
+      // Provide more helpful error messages
+      if (errorMessage.includes('404') || errorMessage.includes('Content not found')) {
+        setError('Audio not available yet. Please wait for content to load completely.')
+      } else if (errorMessage.includes('500')) {
+        setError('Audio service temporarily unavailable. Please try again later.')
+      } else {
+        setError('Unable to generate audio. Please try again.')
+      }
+      
+      console.error('Audio generation error:', err)
       return null
     } finally {
       setIsLoading(false)
@@ -1153,7 +1164,7 @@ export default function Home() {
                                 <AudioPlayer 
                                   topic={selectedTopic}
                                   dimension={selectedDimension} 
-                                  gradeLevel={content.skill_level === 'Beginner' ? 3 : content.skill_level === 'Explorer' ? 4 : 5}
+                                  gradeLevel={selectedSkillLevel === 'Beginner' ? 3 : selectedSkillLevel === 'Explorer' ? 4 : 5}
                                 />
                               </div>
                             </div>

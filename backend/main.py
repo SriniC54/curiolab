@@ -626,13 +626,16 @@ async def generate_content_audio(request: AudioRequest):
     try:
         # Convert grade_level to skill_level
         skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
+        skill_level_caps = skill_level.capitalize()  # "Beginner", "Explorer", "Expert"
         
-        # First check if we have the content cached
-        cached_content = get_cached_content(request.topic, request.dimension, skill_level)
+        # First check if we have the content cached (try both cases)
+        cached_content = get_cached_content(request.topic, request.dimension, skill_level_caps)
+        if not cached_content:
+            cached_content = get_cached_content(request.topic, request.dimension, skill_level)
         
         if not cached_content:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Content not found. Please generate content first before requesting audio."
             )
         
