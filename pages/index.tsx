@@ -19,6 +19,110 @@ interface ContentResponse {
   }>
 }
 
+interface AudioPlayerProps {
+  topic: string
+  dimension: string
+  gradeLevel: number
+}
+
+const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const generateAudio = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      
+      const response = await fetch('http://localhost:8000/generate-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topic,
+          dimension,
+          grade_level: gradeLevel
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Audio generation failed: ${response.status}`)
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      const audioElement = new Audio(audioUrl)
+      audioElement.addEventListener('ended', () => {
+        setIsPlaying(false)
+      })
+      
+      setAudio(audioElement)
+      return audioElement
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate audio')
+      return null
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const togglePlayback = async () => {
+    if (isPlaying && audio) {
+      audio.pause()
+      setIsPlaying(false)
+    } else {
+      let audioToPlay = audio
+      
+      if (!audioToPlay) {
+        audioToPlay = await generateAudio()
+      }
+      
+      if (audioToPlay) {
+        audioToPlay.play()
+        setIsPlaying(true)
+      }
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <button
+        onClick={togglePlayback}
+        disabled={isLoading}
+        className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-500 to-emerald-500 text-white rounded-full font-bold text-lg hover:scale-105 transition-all duration-200 disabled:opacity-50 shadow-lg"
+      >
+        <span className="text-2xl">🦉</span>
+        {isLoading ? (
+          <>
+            <span className="animate-spin">⏳</span>
+            <span>Loading...</span>
+          </>
+        ) : isPlaying ? (
+          <>
+            <span>⏸️</span>
+            <span>Pause Narration</span>
+          </>
+        ) : (
+          <>
+            <span>▶️</span>
+            <span>Play Narration</span>
+          </>
+        )}
+      </button>
+      
+      {error && (
+        <div className="text-red-600 text-sm font-medium">
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface UserProfile {
   name: string
   skill_level: string
@@ -1039,10 +1143,19 @@ export default function Home() {
                         <div>
                           {/* Enhanced Content Display */}
                           <div className="bg-gradient-to-br from-emerald-50 via-blue-50 to-indigo-50 rounded-3xl p-8 lg:p-10 shadow-xl border-2 border-emerald-100 flex-1 overflow-y-auto relative">
-                            <div className="mb-4">
+                            <div className="mb-6">
                               <h3 className="text-3xl lg:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-blue-600 to-purple-600 mb-4 tracking-tight" style={{lineHeight: '1.1'}}>
                                 🦉 {selectedTopic}: {selectedDimension}
                               </h3>
+                              
+                              {/* Audio Player Controls */}
+                              <div className="flex items-center justify-center mb-4 p-4 bg-gradient-to-r from-purple-100 via-blue-100 to-emerald-100 rounded-2xl border border-purple-200">
+                                <AudioPlayer 
+                                  topic={selectedTopic}
+                                  dimension={selectedDimension} 
+                                  gradeLevel={content.skill_level === 'Beginner' ? 3 : content.skill_level === 'Explorer' ? 4 : 5}
+                                />
+                              </div>
                             </div>
                             
                             <div className="prose prose-lg max-w-none">
@@ -1081,7 +1194,7 @@ export default function Home() {
                                   let currentSection: string[] = [];
                                   
                                   paragraphs.forEach((paragraph, index) => {
-                                    const isHeading = /^([🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯🏞️☀️🔆⚡🌱]\s+[^?]+\?)/.test(paragraph.trim());
+                                    const isHeading = /^\*\*(.+?)\*\*/.test(paragraph.trim()) || /^([🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯🏞️☀️🔆⚡🌱]\s+[^?]+\?)/.test(paragraph.trim());
                                     
                                     if (isHeading && currentSection.length > 0) {
                                       // Start new section with this heading
@@ -1107,14 +1220,24 @@ export default function Home() {
                                       
                                       <div className="text-gray-800 leading-relaxed relative z-10">
                                         {section.map((paragraph, paragraphIndex) => {
-                                          // Check if paragraph contains a heading pattern (emoji + text with question mark)
+                                          // Check for different heading patterns
+                                          const asteriskHeadingMatch = paragraph.trim().match(/^\*\*(.+?)\*\*/);
                                           const emojiHeadingMatch = paragraph.trim().match(/^([🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🎨🌺🦋🌈⚡🎁🏆🎵🎲🎨🎪🎭🎨🔍🎯🏞️☀️🔆⚡🌱]\s+[^?]+\?)/);
-                                          const isHeading = emojiHeadingMatch !== null;
+                                          const isHeading = asteriskHeadingMatch !== null || emojiHeadingMatch !== null;
                                           
-                                          if (isHeading && emojiHeadingMatch) {
-                                            // Split heading from any remaining content
-                                            const headingText = emojiHeadingMatch[1];
-                                            const remainingContent = paragraph.trim().substring(headingText.length).trim();
+                                          if (isHeading) {
+                                            let headingText = '';
+                                            let remainingContent = '';
+                                            
+                                            if (asteriskHeadingMatch) {
+                                              // Handle **Title** format - remove asterisks
+                                              headingText = asteriskHeadingMatch[1];
+                                              remainingContent = paragraph.trim().substring(asteriskHeadingMatch[0].length).trim();
+                                            } else if (emojiHeadingMatch) {
+                                              // Handle emoji format
+                                              headingText = emojiHeadingMatch[1];
+                                              remainingContent = paragraph.trim().substring(headingText.length).trim();
+                                            }
                                             
                                             return (
                                               <div key={paragraphIndex} className="mb-8 mt-2">

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
@@ -10,6 +11,7 @@ import requests
 import random
 import hashlib
 from pathlib import Path
+import re
 
 load_dotenv()
 
@@ -35,6 +37,9 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Cache directory setup
 CACHE_DIR = Path("content_cache")
 CACHE_DIR.mkdir(exist_ok=True)
+
+AUDIO_CACHE_DIR = Path("audio_cache")
+AUDIO_CACHE_DIR.mkdir(exist_ok=True)
 
 def get_cache_key(topic: str, dimension: str, skill_level: str) -> str:
     """Generate a consistent cache key for content."""
@@ -85,6 +90,76 @@ def cache_content(topic: str, dimension: str, skill_level: str, content: str, wo
         print(f"💾 Cached content for {topic}-{dimension}-{skill_level}")
     except Exception as e:
         print(f"❌ Cache write error for {cache_key}: {e}")
+
+def get_audio_cache_key(topic: str, dimension: str, skill_level: str) -> str:
+    """Generate cache key for audio files."""
+    return get_cache_key(topic, dimension, skill_level)
+
+def get_cached_audio(topic: str, dimension: str, skill_level: str) -> Path | None:
+    """Check if audio file exists in cache."""
+    cache_key = get_audio_cache_key(topic, dimension, skill_level)
+    audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
+    
+    if audio_file.exists():
+        print(f"🎵 Audio cache HIT for {topic}-{dimension}-{skill_level}")
+        return audio_file
+    
+    print(f"🎵 Audio cache MISS for {topic}-{dimension}-{skill_level}")
+    return None
+
+def clean_text_for_tts(content: str) -> str:
+    """Clean text content for better TTS pronunciation."""
+    # Remove markdown formatting
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', content)  # Remove **bold**
+    text = re.sub(r'^\*\*.*?\*\*', '', text, flags=re.MULTILINE)  # Remove heading asterisks
+    
+    # Add pauses for better readability
+    text = re.sub(r'\n\n', '. ', text)  # Convert paragraph breaks to pauses
+    text = re.sub(r'\n', ' ', text)     # Convert line breaks to spaces
+    
+    # Clean up extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+async def generate_audio(topic: str, dimension: str, skill_level: str, content: str) -> Path:
+    """Generate audio using OpenAI TTS and cache it."""
+    cache_key = get_audio_cache_key(topic, dimension, skill_level)
+    audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
+    
+    # Check cache first
+    if audio_file.exists():
+        return audio_file
+    
+    try:
+        # Clean content for TTS
+        clean_content = clean_text_for_tts(content)
+        
+        print(f"🎤 Generating audio for {topic}-{dimension}-{skill_level}")
+        
+        # Generate audio using OpenAI TTS
+        response = client.audio.speech.create(
+            model="tts-1",  # Use tts-1 for faster generation, tts-1-hd for higher quality
+            voice="nova",   # Kid-friendly voice (options: alloy, echo, fable, onyx, nova, shimmer)
+            input=clean_content
+        )
+        
+        # Save to cache
+        with open(audio_file, 'wb') as f:
+            for chunk in response.iter_bytes():
+                f.write(chunk)
+        
+        print(f"🎵 Audio cached for {topic}-{dimension}-{skill_level}")
+        return audio_file
+        
+    except Exception as e:
+        print(f"❌ Audio generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
+
+class AudioRequest(BaseModel):
+    topic: str
+    dimension: str
+    grade_level: int
 
 class ContentRequest(BaseModel):
     topic: str
@@ -544,6 +619,64 @@ async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> lis
     ]
     print(f"Using generic educational images for {topic_key}")
     return generic_images[:count]
+
+@app.post("/generate-audio")
+async def generate_content_audio(request: AudioRequest):
+    """Generate or retrieve cached audio for content."""
+    try:
+        # Convert grade_level to skill_level
+        skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
+        
+        # First check if we have the content cached
+        cached_content = get_cached_content(request.topic, request.dimension, skill_level)
+        
+        if not cached_content:
+            raise HTTPException(
+                status_code=404, 
+                detail="Content not found. Please generate content first before requesting audio."
+            )
+        
+        # Check if audio is already cached
+        cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)
+        
+        if cached_audio_file:
+            return FileResponse(
+                path=cached_audio_file,
+                media_type="audio/mpeg",
+                filename=f"{request.topic}-{request.dimension}-grade{request.grade_level}.mp3"
+            )
+        
+        # Generate new audio
+        audio_file = await generate_audio(
+            request.topic, 
+            request.dimension, 
+            skill_level, 
+            cached_content["content"]
+        )
+        
+        return FileResponse(
+            path=audio_file,
+            media_type="audio/mpeg", 
+            filename=f"{request.topic}-{request.dimension}-grade{request.grade_level}.mp3"
+        )
+        
+    except Exception as e:
+        print(f"❌ Audio generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/audio/{topic}/{dimension}/{skill_level}")
+async def get_audio_file(topic: str, dimension: str, skill_level: str):
+    """Direct endpoint to get audio file if it exists."""
+    cached_audio_file = get_cached_audio(topic, dimension, skill_level)
+    
+    if cached_audio_file:
+        return FileResponse(
+            path=cached_audio_file,
+            media_type="audio/mpeg",
+            filename=f"{topic}-{dimension}-{skill_level}.mp3"
+        )
+    
+    raise HTTPException(status_code=404, detail="Audio file not found. Generate content and audio first.")
 
 if __name__ == "__main__":
     import uvicorn
