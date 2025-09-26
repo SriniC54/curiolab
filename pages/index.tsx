@@ -67,9 +67,9 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       
       // Provide more helpful error messages
       if (errorMessage.includes('404') || errorMessage.includes('Content not found')) {
-        setError('Audio not available yet. Please wait for content to load completely.')
+        setError('Please generate content first, then try audio.')
       } else if (errorMessage.includes('500')) {
-        setError('Audio service temporarily unavailable. Please try again later.')
+        setError('Audio service error. Please try again.')
       } else {
         setError('Unable to generate audio. Please try again.')
       }
