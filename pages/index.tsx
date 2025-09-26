@@ -30,11 +30,36 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
   const [isLoading, setIsLoading] = useState(false)
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
 
   const generateAudio = async () => {
     try {
       setIsLoading(true)
       setError(null)
+      setProgress(0)
+      
+      // Progress milestones with fun messages
+      const milestones = [
+        { percent: 15, message: "🦉 Understanding the content..." },
+        { percent: 35, message: "📖 Analyzing the text..." },
+        { percent: 55, message: "🎤 Warming up my voice..." },
+        { percent: 75, message: "🎵 Adding natural rhythm..." },
+        { percent: 90, message: "✨ Adding final touches..." },
+        { percent: 100, message: "🎉 Ready to play!" }
+      ]
+      
+      // Simulate progress during the ~20 second generation
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          const newProgress = Math.min(prev + 2, 95) // Stop at 95% until actual completion
+          const milestone = milestones.find(m => m.percent <= newProgress && m.percent > prev)
+          if (milestone) {
+            setProgressMessage(milestone.message)
+          }
+          return newProgress
+        })
+      }, 400) // Update every 400ms for smooth animation
       
       const response = await fetch('http://localhost:8000/generate-audio', {
         method: 'POST',
@@ -60,9 +85,18 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
         setIsPlaying(false)
       })
       
+      // Complete progress and clean up interval
+      clearInterval(progressInterval)
+      setProgress(100)
+      setProgressMessage("🎉 Ready to play!")
+      
       setAudio(audioElement)
       return audioElement
     } catch (err) {
+      // Clean up progress on error
+      clearInterval(progressInterval)
+      setProgress(0)
+      setProgressMessage('')
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate audio'
       
       // Provide more helpful error messages  
@@ -110,8 +144,8 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
         <span className="text-2xl">🦉</span>
         {isLoading ? (
           <>
-            <span className="animate-spin">⏳</span>
-            <span>Generating Audio... (~20s)</span>
+            <span className="animate-pulse">🦉</span>
+            <span>{progress}%</span>
           </>
         ) : isPlaying ? (
           <>
@@ -125,6 +159,12 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
           </>
         )}
       </button>
+      
+      {isLoading && progressMessage && (
+        <div className="text-emerald-600 text-sm font-medium animate-fade-in">
+          {progressMessage}
+        </div>
+      )}
       
       {error && (
         <div className="text-red-600 text-sm font-medium">
