@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import analytics from '../lib/analytics'
 
@@ -65,11 +65,11 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate audio'
       
-      // Provide more helpful error messages
+      // Provide more helpful error messages  
       if (errorMessage.includes('404') || errorMessage.includes('Content not found')) {
-        setError('Please generate content first, then try audio.')
+        setError('Please generate content first by clicking "🚀 Start Learning!"')
       } else if (errorMessage.includes('500')) {
-        setError('Audio service error. Please try again.')
+        setError('Audio generation failed. Please try again.')
       } else {
         setError('Unable to generate audio. Please try again.')
       }
@@ -99,6 +99,7 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
     }
   }
 
+
   return (
     <div className="flex items-center gap-4">
       <button
@@ -110,7 +111,7 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
         {isLoading ? (
           <>
             <span className="animate-spin">⏳</span>
-            <span>Loading...</span>
+            <span>Generating Audio... (~20s)</span>
           </>
         ) : isPlaying ? (
           <>

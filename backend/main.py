@@ -681,6 +681,16 @@ async def get_audio_file(topic: str, dimension: str, skill_level: str):
     
     raise HTTPException(status_code=404, detail="Audio file not found. Generate content and audio first.")
 
+@app.get("/content-exists/{topic}/{dimension}/{skill_level}")
+async def check_content_exists(topic: str, dimension: str, skill_level: str):
+    """Check if content exists in cache without generating it."""
+    cached_content = get_cached_content(topic, dimension, skill_level)
+    
+    if cached_content:
+        return {"exists": True, "cached": True}
+    else:
+        return {"exists": False, "cached": False}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
