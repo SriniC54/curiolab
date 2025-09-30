@@ -34,6 +34,9 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
   const [progressMessage, setProgressMessage] = useState('')
 
   const generateAudio = async () => {
+    // Declare progressInterval outside try block for proper cleanup
+    let progressInterval: NodeJS.Timeout | null = null
+    
     try {
       setIsLoading(true)
       setError(null)
@@ -50,7 +53,7 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       ]
       
       // Simulate progress during the ~20 second generation
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setProgress(prev => {
           const newProgress = Math.min(prev + 2, 95) // Stop at 95% until actual completion
           const milestone = milestones.find(m => m.percent <= newProgress && m.percent > prev)
@@ -86,7 +89,9 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       })
       
       // Complete progress and clean up interval
-      clearInterval(progressInterval)
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
       setProgress(100)
       setProgressMessage("🎉 Ready to play!")
       
@@ -94,7 +99,9 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       return audioElement
     } catch (err) {
       // Clean up progress on error
-      clearInterval(progressInterval)
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
       setProgress(0)
       setProgressMessage('')
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate audio'
@@ -112,6 +119,10 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       return null
     } finally {
       setIsLoading(false)
+      // Clean up interval if still running
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
     }
   }
 
