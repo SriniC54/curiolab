@@ -628,34 +628,33 @@ async def generate_content_audio(request: AudioRequest):
         skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
         skill_level_caps = skill_level.capitalize()  # "Beginner", "Explorer", "Expert"
         
-        # First check if we have the content cached (try both cases)
+        # First check if we have the content cached (try both cases AND check if content is displayed)
         cached_content = get_cached_content(request.topic, request.dimension, skill_level_caps)
         if not cached_content:
             cached_content = get_cached_content(request.topic, request.dimension, skill_level)
         
+        # Also check for any existing content with this topic/dimension regardless of case/timing
         if not cached_content:
-            # Auto-generate content if it doesn't exist (for seamless UX)
-            print(f"📝 Content not found. Auto-generating content for {request.topic}-{request.dimension}-{skill_level_caps}")
-            
-            try:
-                # Generate content first by calling the content generation logic
-                content_request = ContentRequest(
-                    topic=request.topic,
-                    dimension=request.dimension,
-                    skill_level=skill_level_caps
-                )
-                content_response = await generate_content(content_request)
-                cached_content = {
-                    "content": content_response.content,
-                    "skill_level": content_response.skill_level
-                }
-                print(f"✅ Auto-generated content for audio generation")
-            except Exception as e:
-                print(f"❌ Auto-generation failed: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Could not generate content for audio. Please try generating content manually first."
-                )
+            # Try to find ANY cached content for this topic/dimension combination
+            import glob
+            cache_pattern = CACHE_DIR / f"{request.topic.lower().strip()}-{request.dimension.lower().strip()}-*.json"
+            matching_files = list(glob.glob(str(cache_pattern)))
+            if matching_files:
+                # Use the most recent existing content file
+                latest_file = max(matching_files, key=lambda f: Path(f).stat().st_mtime)
+                try:
+                    with open(latest_file, 'r', encoding='utf-8') as f:
+                        cached_content = json.load(f)
+                        print(f"🔄 Using existing content from {Path(latest_file).name}")
+                except Exception as e:
+                    print(f"❌ Error reading existing content: {e}")
+                    cached_content = None
+        
+        if not cached_content:
+            raise HTTPException(
+                status_code=404,
+                detail="Please generate content first by clicking '🚀 Start Learning!' button."
+            )
         
         # Check if audio is already cached
         cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)

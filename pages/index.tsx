@@ -108,7 +108,7 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate audio'
       
       // Provide more helpful error messages  
-      if (errorMessage.includes('404') || errorMessage.includes('Content not found')) {
+      if (errorMessage.includes('404') || errorMessage.includes('Content not found') || errorMessage.includes('Start Learning')) {
         setError('Please generate content first by clicking "🚀 Start Learning!"')
       } else if (errorMessage.includes('500')) {
         setError('Audio generation failed. Please try again.')
