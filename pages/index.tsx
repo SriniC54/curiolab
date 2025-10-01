@@ -42,13 +42,14 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
       setError(null)
       setProgress(0)
       
-      // Progress milestones with fun messages
+      // Progress milestones with fun messages (for content + audio generation)
       const milestones = [
-        { percent: 15, message: "🦉 Understanding the content..." },
-        { percent: 35, message: "📖 Analyzing the text..." },
+        { percent: 10, message: "🦉 Understanding the content..." },
+        { percent: 25, message: "📖 Researching the topic..." },
+        { percent: 40, message: "✍️ Writing the article..." },
         { percent: 55, message: "🎤 Warming up my voice..." },
-        { percent: 75, message: "🎵 Adding natural rhythm..." },
-        { percent: 90, message: "✨ Adding final touches..." },
+        { percent: 70, message: "🎵 Adding natural rhythm..." },
+        { percent: 85, message: "✨ Adding final touches..." },
         { percent: 100, message: "🎉 Ready to play!" }
       ]
       

@@ -634,10 +634,28 @@ async def generate_content_audio(request: AudioRequest):
             cached_content = get_cached_content(request.topic, request.dimension, skill_level)
         
         if not cached_content:
-            raise HTTPException(
-                status_code=404,
-                detail="Content not found. Please generate content first before requesting audio."
-            )
+            # Auto-generate content if it doesn't exist (for seamless UX)
+            print(f"📝 Content not found. Auto-generating content for {request.topic}-{request.dimension}-{skill_level_caps}")
+            
+            try:
+                # Generate content first by calling the content generation logic
+                content_request = ContentRequest(
+                    topic=request.topic,
+                    dimension=request.dimension,
+                    skill_level=skill_level_caps
+                )
+                content_response = await generate_content(content_request)
+                cached_content = {
+                    "content": content_response.content,
+                    "skill_level": content_response.skill_level
+                }
+                print(f"✅ Auto-generated content for audio generation")
+            except Exception as e:
+                print(f"❌ Auto-generation failed: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not generate content for audio. Please try generating content manually first."
+                )
         
         # Check if audio is already cached
         cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)
