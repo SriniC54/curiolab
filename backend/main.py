@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
 import os
 from dotenv import load_dotenv
 import openai
@@ -12,6 +13,11 @@ import random
 import hashlib
 from pathlib import Path
 import re
+import sqlite3
+import bcrypt
+import jwt
+from datetime import datetime, timedelta
+from typing import Optional
 
 load_dotenv()
 
@@ -40,6 +46,104 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 AUDIO_CACHE_DIR = Path("audio_cache")
 AUDIO_CACHE_DIR.mkdir(exist_ok=True)
+
+# Database setup
+DB_PATH = "curiolab.db"
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
+
+# Security
+security = HTTPBearer()
+
+def init_database():
+    """Initialize SQLite database with user and progress tables."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Users table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP,
+            name TEXT
+        )
+    """)
+    
+    # User progress table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            topic TEXT NOT NULL,
+            dimension TEXT NOT NULL,
+            skill_level TEXT NOT NULL,
+            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            time_spent INTEGER DEFAULT 0,
+            audio_played BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            UNIQUE(user_id, topic, dimension, skill_level)
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_database()
+
+# Authentication helper functions
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against its hash."""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_jwt_token(user_id: int, email: str) -> str:
+    """Create a JWT token for user authentication."""
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_jwt_token(token: str) -> dict:
+    """Verify and decode a JWT token."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Get current user from JWT token."""
+    token = credentials.credentials
+    payload = verify_jwt_token(token)
+    
+    # Get user from database to ensure they still exist
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, email, name, created_at FROM users WHERE id = ?", (payload["user_id"],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    return {
+        "id": user[0],
+        "email": user[1], 
+        "name": user[2],
+        "created_at": user[3]
+    }
 
 def get_cache_key(topic: str, dimension: str, skill_level: str) -> str:
     """Generate a consistent cache key for content."""
@@ -174,6 +278,30 @@ class ContentResponse(BaseModel):
     readability_score: float
     word_count: int
     images: list
+
+# Authentication models
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str
+    name: Optional[str] = None
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    name: Optional[str]
+    created_at: str
+
+class ProgressEntry(BaseModel):
+    topic: str
+    dimension: str
+    skill_level: str
+    completed_at: str
+    time_spent: int
+    audio_played: bool
 
 @app.get("/")
 async def root():
@@ -707,6 +835,134 @@ async def check_content_exists(topic: str, dimension: str, skill_level: str):
         return {"exists": True, "cached": True}
     else:
         return {"exists": False, "cached": False}
+
+# Authentication endpoints
+@app.post("/register")
+async def register_user(user_data: UserRegister):
+    """Register a new user."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check if user already exists
+        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data.email,))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        # Hash password and create user
+        password_hash = hash_password(user_data.password)
+        cursor.execute(
+            "INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)",
+            (user_data.email, password_hash, user_data.name)
+        )
+        user_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        
+        # Create JWT token
+        token = create_jwt_token(user_id, user_data.email)
+        
+        return {
+            "message": "User registered successfully",
+            "token": token,
+            "user": {
+                "id": user_id,
+                "email": user_data.email,
+                "name": user_data.name
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+@app.post("/login")
+async def login_user(user_data: UserLogin):
+    """Login user and return JWT token."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get user from database
+        cursor.execute(
+            "SELECT id, email, password_hash, name FROM users WHERE email = ?", 
+            (user_data.email,)
+        )
+        user = cursor.fetchone()
+        
+        if not user or not verify_password(user_data.password, user[2]):
+            conn.close()
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        # Update last login
+        cursor.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+            (user[0],)
+        )
+        conn.commit()
+        conn.close()
+        
+        # Create JWT token
+        token = create_jwt_token(user[0], user[1])
+        
+        return {
+            "message": "Login successful",
+            "token": token,
+            "user": {
+                "id": user[0],
+                "email": user[1],
+                "name": user[3]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.get("/profile")
+async def get_user_profile(current_user: dict = Depends(get_current_user)):
+    """Get current user's profile and progress."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get user progress
+        cursor.execute("""
+            SELECT topic, dimension, skill_level, completed_at, time_spent, audio_played
+            FROM user_progress 
+            WHERE user_id = ?
+            ORDER BY completed_at DESC
+        """, (current_user["id"],))
+        
+        progress_data = cursor.fetchall()
+        conn.close()
+        
+        progress = [
+            {
+                "topic": row[0],
+                "dimension": row[1], 
+                "skill_level": row[2],
+                "completed_at": row[3],
+                "time_spent": row[4],
+                "audio_played": bool(row[5])
+            }
+            for row in progress_data
+        ]
+        
+        return {
+            "user": current_user,
+            "progress": progress,
+            "stats": {
+                "topics_completed": len(progress),
+                "total_time_spent": sum(p["time_spent"] for p in progress),
+                "audio_sessions": sum(1 for p in progress if p["audio_played"])
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get profile: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

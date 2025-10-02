@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import analytics from '../lib/analytics'
+import { useAuth } from '../contexts/AuthContext'
+import { AuthModal } from '../components/AuthModal'
+import { UserProfile } from '../components/UserProfile'
 
 interface ContentResponse {
   topic: string
@@ -235,6 +238,12 @@ interface UserProgress {
 }
 
 export default function Home() {
+  // Authentication
+  const { user, isAuthenticated, isLoading } = useAuth()
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [showProfile, setShowProfile] = useState(false)
+
   // Profile states
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [showProfileSetup, setShowProfileSetup] = useState(false)
@@ -714,6 +723,80 @@ export default function Home() {
       </Head>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-cyan-100 to-green-100">
+
+        {/* Header with Authentication */}
+        <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-white/20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center">
+                <h1 className="text-xl font-bold text-gray-900">🦉 CurioLab</h1>
+              </div>
+              <div className="flex items-center space-x-4">
+                {isLoading ? (
+                  <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                ) : isAuthenticated ? (
+                  <div className="flex items-center space-x-3">
+                    <span className="text-sm text-gray-700">Hi, {user?.name || user?.email}!</span>
+                    <button
+                      onClick={() => setShowProfile(true)}
+                      className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                    >
+                      Profile
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setAuthMode('login')
+                        setShowAuthModal(true)
+                      }}
+                      className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthMode('register')
+                        setShowAuthModal(true)
+                      }}
+                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Authentication Modal */}
+        <AuthModal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          defaultMode={authMode}
+        />
+
+        {/* User Profile Modal */}
+        {showProfile && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">My Learning Profile</h2>
+                  <button
+                    onClick={() => setShowProfile(false)}
+                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                  >
+                    ×
+                  </button>
+                </div>
+                <UserProfile />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Profile Setup/Settings Modal */}
         {showProfileSetup && (
