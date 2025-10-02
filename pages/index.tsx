@@ -65,7 +65,7 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
         })
       }, 400) // Update every 400ms for smooth animation
       
-      const response = await fetch('http://localhost:8000/generate-audio', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-audio`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
