@@ -244,14 +244,6 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [showProfile, setShowProfile] = useState(false)
 
-  // Profile states
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
-  const [showProfileSetup, setShowProfileSetup] = useState(false)
-  const [profileForm, setProfileForm] = useState({
-    name: '',
-    skill_level: 'Explorer',
-    avatar: '🎓'
-  })
 
   // Progress tracking states
   const [userProgress, setUserProgress] = useState<UserProgress | null>(null)
@@ -991,55 +983,6 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* Profile Section - Full Width on Mobile */}
-              <div className="w-full">
-                {userProfile ? (
-                  <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 w-full">
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <div className="text-3xl md:text-4xl flex-shrink-0">{userProfile.avatar}</div>
-                      <div className="text-left flex-1 min-w-0">
-                        <h3 className="font-bold text-blue-700 text-xl md:text-2xl truncate">
-                          Hi {userProfile.name}! 👋
-                        </h3>
-                        <p className="text-gray-600 text-base md:text-lg">{userProfile.skill_level} Explorer</p>
-                        {userProgress && userProgress.sessions.length > 0 && (
-                          <div className="text-xs md:text-sm text-green-600 mt-2 space-y-1">
-                            <div>📚 {userProgress.topicsExplored} topics • ⏱️ {Math.floor(userProgress.totalTimeSpent / 60)}min</div>
-                            {userProgress.learningStreak.currentStreak > 0 && (
-                              <div className="font-bold">🔥 {userProgress.learningStreak.currentStreak} day streak!</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setShowProfileSetup(true)}
-                        className="text-gray-400 hover:text-gray-600 text-lg md:text-xl p-2 flex-shrink-0"
-                        title="Settings"
-                      >
-                        ⚙️
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-gradient-to-r from-blue-100 to-green-100 rounded-2xl shadow-lg p-4 md:p-6 border-2 border-blue-200 w-full">
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <div className="text-3xl md:text-4xl flex-shrink-0">👤</div>
-                      <div className="text-left flex-1 min-w-0">
-                        <h3 className="font-bold text-blue-700 text-xl md:text-2xl">
-                          Welcome to CurioLab! 
-                        </h3>
-                        <p className="text-gray-600 text-sm md:text-lg">Create a profile to track your progress and build streaks</p>
-                      </div>
-                      <button
-                        onClick={() => setShowProfileSetup(true)}
-                        className="bg-gradient-to-r from-blue-500 to-green-500 text-white px-4 py-2 md:px-8 md:py-3 rounded-full font-bold text-sm md:text-lg hover:scale-105 transition-transform shadow-md flex-shrink-0"
-                      >
-                        🚀 Create
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Topic Status and Navigation - Moved Lower */}
