@@ -145,6 +145,50 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         "created_at": user[3]
     }
 
+async def record_user_progress(user_id: int, topic: str, dimension: str, skill_level: str, time_spent: int = 0, audio_played = False):
+    """Record or update user progress for a topic."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check if this progress entry already exists
+        cursor.execute("""
+            SELECT id, time_spent, audio_played FROM user_progress 
+            WHERE user_id = ? AND topic = ? AND dimension = ? AND skill_level = ?
+        """, (user_id, topic, dimension, skill_level))
+        
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing entry
+            new_time_spent = max(existing[1], time_spent)  # Keep the maximum time spent
+            # Handle audio_played logic
+            if audio_played is None:
+                new_audio_played = existing[2]  # Don't change existing value
+            else:
+                new_audio_played = existing[2] or audio_played  # True if either is true
+            
+            cursor.execute("""
+                UPDATE user_progress 
+                SET time_spent = ?, audio_played = ?, completed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_time_spent, new_audio_played, existing[0]))
+        else:
+            # Create new entry
+            actual_audio_played = False if audio_played is None else audio_played
+            cursor.execute("""
+                INSERT INTO user_progress (user_id, topic, dimension, skill_level, time_spent, audio_played)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, topic, dimension, skill_level, time_spent, actual_audio_played))
+        
+        conn.commit()
+        conn.close()
+        print(f"📈 Progress recorded for user {user_id}: {topic}-{dimension}-{skill_level}")
+        
+    except Exception as e:
+        print(f"❌ Error recording progress: {e}")
+        # Don't raise exception here to avoid breaking the main functionality
+
 def get_cache_key(topic: str, dimension: str, skill_level: str) -> str:
     """Generate a consistent cache key for content."""
     # Normalize inputs to handle variations in capitalization/spacing
@@ -303,6 +347,12 @@ class ProgressEntry(BaseModel):
     time_spent: int
     audio_played: bool
 
+class TimeTrackingRequest(BaseModel):
+    topic: str
+    dimension: str
+    skill_level: str
+    time_spent: int  # in seconds
+
 @app.get("/")
 async def root():
     return {"message": "CurioLab API is running!"}
@@ -376,7 +426,7 @@ async def generate_dimensions(topic_data: dict):
         raise HTTPException(status_code=500, detail=f"Dimension generation failed: {str(e)}")
 
 @app.post("/generate-content", response_model=ContentResponse)
-async def generate_content(request: ContentRequest):
+async def generate_content(request: ContentRequest, current_user: dict = Depends(get_current_user)):
     """Generate grade-appropriate content for a given topic and dimension."""
     
     if not client.api_key:
@@ -401,7 +451,7 @@ async def generate_content(request: ContentRequest):
         if cached_content:
             # Return cached content
             images = await get_unsplash_images(request.topic, request.dimension, 3)
-            return ContentResponse(
+            response = ContentResponse(
                 topic=cached_content["topic"],
                 dimension=cached_content["dimension"],
                 skill_level=cached_content["skill_level"],
@@ -410,29 +460,41 @@ async def generate_content(request: ContentRequest):
                 word_count=cached_content["word_count"],
                 images=images
             )
+        else:
+            # If not cached, generate new content using OpenAI
+            content = await generate_topic_content(request.topic, request.dimension, request.skill_level)
+            
+            # Get relevant images from Unsplash
+            images = await get_unsplash_images(request.topic, request.dimension, 3)
+            
+            # Calculate readability score
+            fk_score = textstat.flesch_reading_ease(content)
+            word_count = len(content.split())
+            
+            # Cache the newly generated content
+            cache_content(request.topic, request.dimension, request.skill_level, content, word_count, fk_score)
+            
+            response = ContentResponse(
+                topic=request.topic,
+                dimension=request.dimension,
+                skill_level=request.skill_level,
+                content=content,
+                readability_score=fk_score,
+                word_count=word_count,
+                images=images
+            )
         
-        # If not cached, generate new content using OpenAI
-        content = await generate_topic_content(request.topic, request.dimension, request.skill_level)
-        
-        # Get relevant images from Unsplash
-        images = await get_unsplash_images(request.topic, request.dimension, 3)
-        
-        # Calculate readability score
-        fk_score = textstat.flesch_reading_ease(content)
-        word_count = len(content.split())
-        
-        # Cache the newly generated content
-        cache_content(request.topic, request.dimension, request.skill_level, content, word_count, fk_score)
-        
-        return ContentResponse(
-            topic=request.topic,
-            dimension=request.dimension,
-            skill_level=request.skill_level,
-            content=content,
-            readability_score=fk_score,
-            word_count=word_count,
-            images=images
+        # Record user progress for content viewing
+        await record_user_progress(
+            current_user["id"], 
+            request.topic, 
+            request.dimension, 
+            request.skill_level,
+            time_spent=0,  # Will be updated when they spend time reading
+            audio_played=False
         )
+        
+        return response
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
@@ -749,7 +811,7 @@ async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> lis
     return generic_images[:count]
 
 @app.post("/generate-audio")
-async def generate_content_audio(request: AudioRequest):
+async def generate_content_audio(request: AudioRequest, current_user: dict = Depends(get_current_user)):
     """Generate or retrieve cached audio for content."""
     try:
         # Convert grade_level to skill_level
@@ -786,6 +848,16 @@ async def generate_content_audio(request: AudioRequest):
         
         # Check if audio is already cached
         cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)
+        
+        # Record that user played audio for this topic
+        await record_user_progress(
+            current_user["id"], 
+            request.topic, 
+            request.dimension, 
+            skill_level_caps,
+            time_spent=0,  # Audio duration could be tracked in future
+            audio_played=True
+        )
         
         if cached_audio_file:
             return FileResponse(
@@ -963,6 +1035,27 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get profile: {str(e)}")
+
+@app.post("/track-time")
+async def track_reading_time(request: TimeTrackingRequest, current_user: dict = Depends(get_current_user)):
+    """Track time spent reading content."""
+    try:
+        await record_user_progress(
+            current_user["id"], 
+            request.topic, 
+            request.dimension, 
+            request.skill_level,
+            time_spent=request.time_spent,
+            audio_played=None  # Don't override existing audio flag
+        )
+        
+        return {
+            "message": "Time tracked successfully",
+            "time_spent": request.time_spent
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to track time: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
