@@ -261,92 +261,11 @@ export default function Home() {
   const [loadingDimensions, setLoadingDimensions] = useState(false)
   const [error, setError] = useState('')
 
-  // Load profile and progress from localStorage on mount
+  // Track analytics for session start
   useEffect(() => {
-    const savedProfile = localStorage.getItem('curiolab-profile')
-    let hasProfile = false
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile)
-      setUserProfile(profile)
-      setSelectedSkillLevel(profile.skill_level || 'Explorer') // Use profile skill level as default
-      hasProfile = true
-      
-      // Identify user in analytics
-      analytics.identify(`user_${profile.createdAt}`, {
-        skill_level: profile.skill_level,
-        avatar: profile.avatar,
-        created_at: profile.createdAt
-      })
-    }
-
-    const savedProgress = localStorage.getItem('curiolab-progress')
-    let returningUser = false
-    if (savedProgress) {
-      const progress = JSON.parse(savedProgress)
-      setUserProgress(progress)
-      returningUser = progress.sessions.length > 0
-    }
-    
-    // Track session start
-    analytics.sessionStarted(hasProfile, returningUser)
-    
-    // No longer auto-show profile setup - let users explore first
+    analytics.sessionStarted(!!user, false)
   }, [])
 
-  // Profile functions
-  const createProfile = () => {
-    if (profileForm.name.trim().length < 2) {
-      setError('Name must be at least 2 characters long')
-      return
-    }
-
-    const newProfile: UserProfile = {
-      name: profileForm.name.trim(),
-      skill_level: profileForm.skill_level,
-      avatar: profileForm.avatar,
-      createdAt: new Date().toISOString()
-    }
-
-    localStorage.setItem('curiolab-profile', JSON.stringify(newProfile))
-    setUserProfile(newProfile)
-    setSelectedSkillLevel(newProfile.skill_level)
-    setShowProfileSetup(false)
-    setError('')
-    
-    // Track profile creation
-    analytics.identify(`user_${newProfile.createdAt}`, {
-      skill_level: newProfile.skill_level,
-      avatar: newProfile.avatar,
-      created_at: newProfile.createdAt
-    })
-    analytics.profileCreated(newProfile.skill_level, newProfile.avatar)
-  }
-
-  const updateProfile = (updates: Partial<UserProfile>) => {
-    if (!userProfile) return
-    
-    const updatedProfile = { ...userProfile, ...updates }
-    localStorage.setItem('curiolab-profile', JSON.stringify(updatedProfile))
-    setUserProfile(updatedProfile)
-    if (updates.skill_level) {
-      setSelectedSkillLevel(updates.skill_level)
-    }
-  }
-
-  const resetProfile = () => {
-    localStorage.removeItem('curiolab-profile')
-    localStorage.removeItem('curiolab-progress')
-    setUserProfile(null)
-    setUserProgress(null)
-    setShowProfileSetup(true)
-    // Reset all states
-    setSelectedTopic('')
-    setCustomTopic('')
-    setAvailableDimensions([])
-    setSelectedDimension('')
-    setContent(null)
-    setError('')
-  }
 
   // Topic completion and streak helper functions
   const updateTopicCompletion = (completedTopics: TopicCompletion[], topic: string, dimension: string): TopicCompletion[] => {
@@ -459,15 +378,15 @@ export default function Home() {
       readabilityScore: contentData.readability_score
     }
 
-    // Update progress (only if user has a profile)
-    if (!userProfile) {
-      // If no profile, just clear session - don't track progress
+    // Update progress (only if user is authenticated)
+    if (!user) {
+      // If not authenticated, just clear session - don't track progress
       setCurrentSession(null)
       return
     }
 
     const currentProgress = userProgress || {
-      profile: userProfile,
+      profile: { name: user.name || user.email, skill_level: selectedSkillLevel },
       sessions: [],
       totalTimeSpent: 0,
       topicsExplored: 0,
@@ -500,13 +419,13 @@ export default function Home() {
   }
 
   const submitFeedback = (rating: 'thumbs_up' | 'thumbs_down') => {
-    // Track feedback regardless of profile status
-    analytics.feedbackGiven(selectedTopic, selectedDimension, selectedSkillLevel, rating, !!userProfile)
+    // Track feedback regardless of authentication status
+    analytics.feedbackGiven(selectedTopic, selectedDimension, selectedSkillLevel, rating, !!user)
     
-    // If user has no profile, show login prompt instead
-    if (!userProfile) {
+    // If user is not authenticated, show auth modal instead
+    if (!user) {
       setShowFeedback(false)
-      setShowProfileSetup(true)
+      setShowAuthModal(true)
       return
     }
 
@@ -679,7 +598,7 @@ export default function Home() {
       analytics.contentGenerated(selectedTopic, selectedDimension, selectedSkillLevel, data.word_count, generationTime)
       
       // Complete learning session and show feedback for all users
-      if (userProfile) {
+      if (user) {
         completeLearningSession(data)
       } else {
         // Show feedback for anonymous users too
@@ -790,8 +709,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Profile Setup/Settings Modal */}
-        {showProfileSetup && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-4 lg:p-8 max-h-[95vh] overflow-y-auto">
               {userProfile ? (
@@ -1074,7 +991,7 @@ export default function Home() {
                   </h3>
                   
                   {/* Topic Progress for Logged-in Users */}
-                  {userProfile && (() => {
+                  {user && (() => {
                     const completion = getTopicCompletion(selectedTopic)
                     const completedCount = completion ? completion.dimensionsCompleted.length : 0
                     const totalCount = availableDimensions.length || 5
@@ -1112,7 +1029,7 @@ export default function Home() {
                   
                   <div className="space-y-2 lg:space-y-3">
                     {availableDimensions.map((dimension, index) => {
-                      const isCompleted = userProfile ? isDimensionCompleted(selectedTopic, dimension.name) : false
+                      const isCompleted = user ? isDimensionCompleted(selectedTopic, dimension.name) : false
                       const isSelected = selectedDimension === dimension.name
                       
                       return (
