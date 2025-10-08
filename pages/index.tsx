@@ -386,7 +386,12 @@ export default function Home() {
     }
 
     const currentProgress = userProgress || {
-      profile: { name: user.name || user.email, skill_level: selectedSkillLevel },
+      profile: { 
+        name: user.name || user.email, 
+        skill_level: selectedSkillLevel,
+        avatar: '🧪', // Default avatar
+        createdAt: user.created_at || new Date().toISOString()
+      },
       sessions: [],
       totalTimeSpent: 0,
       topicsExplored: 0,
