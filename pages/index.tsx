@@ -716,7 +716,7 @@ export default function Home() {
 
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-4 lg:p-8 max-h-[95vh] overflow-y-auto">
-              {userProfile ? (
+              {user ? (
                 // Settings for existing users
                 <div>
                   <div className="text-center mb-6">
@@ -724,10 +724,10 @@ export default function Home() {
                       Your Learning Dashboard 📊
                     </h2>
                     <div className="flex items-center justify-center gap-4 mb-4">
-                      <div className="text-4xl">{userProfile.avatar}</div>
+                      <div className="text-4xl">🧪</div>
                       <div className="text-left">
-                        <h3 className="font-bold text-blue-700 text-xl">{userProfile.name}</h3>
-                        <p className="text-gray-600">{userProfile.skill_level} Explorer</p>
+                        <h3 className="font-bold text-blue-700 text-xl">{user.name || user.email}</h3>
+                        <p className="text-gray-600">Explorer</p>
                       </div>
                     </div>
                   </div>
