@@ -764,14 +764,14 @@ export default function Home() {
                   {/* Action Buttons */}
                   <div className="space-y-4">
                     <button
-                      onClick={resetProfile}
+                      onClick={() => logout()}
                       className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-lg"
                     >
                       🚪 Logout & Reset Progress
                     </button>
                     
                     <button
-                      onClick={() => setShowProfileSetup(false)}
+                      onClick={() => setShowUserProfile(false)}
                       className="w-full bg-gray-100 text-gray-700 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors"
                     >
                       Continue Learning
@@ -872,7 +872,7 @@ export default function Home() {
 
                     {/* Create Profile Button */}
                     <button
-                      onClick={createProfile}
+                      onClick={() => setShowAuthModal(true)}
                       disabled={profileForm.name.trim().length < 2}
                       className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mb-3"
                     >
@@ -881,7 +881,7 @@ export default function Home() {
 
                     {/* Dismiss Option */}
                     <button
-                      onClick={() => setShowProfileSetup(false)}
+                      onClick={() => setShowUserProfile(false)}
                       className="w-full text-gray-500 hover:text-gray-700 py-2 text-sm font-medium transition-colors"
                     >
                       Continue exploring without profile
