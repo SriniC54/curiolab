@@ -714,11 +714,9 @@ export default function Home() {
           </div>
         )}
 
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-4 lg:p-8 max-h-[95vh] overflow-y-auto">
-              {user ? (
-                // Settings for existing users
-                <div>
+        <main className="container mx-auto px-4 py-6">
+          {/* Header */}
+          <div className="mb-10">
                   <div className="text-center mb-6">
                     <h2 className="text-4xl font-black text-blue-700 mb-2">
                       Your Learning Dashboard 📊
