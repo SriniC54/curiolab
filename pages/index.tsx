@@ -771,7 +771,7 @@ export default function Home() {
                     </button>
                     
                     <button
-                      onClick={() => setShowUserProfile(false)}
+                      onClick={() => setShowProfile(false)}
                       className="w-full bg-gray-100 text-gray-700 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors"
                     >
                       Continue Learning
@@ -819,8 +819,8 @@ export default function Home() {
                       </label>
                       <input
                         type="text"
-                        value={profileForm.name}
-                        onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
+                        value={""}
+                        onChange={(e) => {}}
                         placeholder="Enter your name..."
                         className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:outline-none text-lg"
                       />
@@ -835,9 +835,9 @@ export default function Home() {
                         {['Beginner', 'Explorer', 'Expert'].map((level) => (
                           <button
                             key={level}
-                            onClick={() => setProfileForm({...profileForm, skill_level: level})}
+                            onClick={() => {}}
                             className={`flex-1 py-3 rounded-xl font-bold text-base lg:text-lg transition-all touch-manipulation min-h-[48px] ${
-                              profileForm.skill_level === level
+                              "Explorer" === level
                                 ? 'bg-green-500 text-white shadow-lg scale-105'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                             }`}
@@ -857,9 +857,9 @@ export default function Home() {
                         {avatarOptions.map((avatar) => (
                           <button
                             key={avatar}
-                            onClick={() => setProfileForm({...profileForm, avatar})}
+                            onClick={() => {}}
                             className={`w-12 h-12 lg:w-14 lg:h-14 rounded-xl text-2xl lg:text-3xl transition-all touch-manipulation ${
-                              profileForm.avatar === avatar
+                              "🧪" === avatar
                                 ? 'bg-blue-200 scale-110 shadow-lg'
                                 : 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300'
                             }`}
@@ -873,7 +873,7 @@ export default function Home() {
                     {/* Create Profile Button */}
                     <button
                       onClick={() => setShowAuthModal(true)}
-                      disabled={profileForm.name.trim().length < 2}
+                      disabled={"".trim().length < 2}
                       className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-4 rounded-full font-bold text-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mb-3"
                     >
                       🚀 Start Learning Adventure!
@@ -881,7 +881,7 @@ export default function Home() {
 
                     {/* Dismiss Option */}
                     <button
-                      onClick={() => setShowUserProfile(false)}
+                      onClick={() => setShowProfile(false)}
                       className="w-full text-gray-500 hover:text-gray-700 py-2 text-sm font-medium transition-colors"
                     >
                       Continue exploring without profile
