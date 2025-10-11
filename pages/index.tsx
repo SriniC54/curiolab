@@ -239,7 +239,7 @@ interface UserProgress {
 
 export default function Home() {
   // Authentication
-  const { user, isAuthenticated, isLoading } = useAuth()
+  const { user, isAuthenticated, isLoading, logout } = useAuth()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [showProfile, setShowProfile] = useState(false)
