@@ -717,21 +717,56 @@ export default function Home() {
         <main className="container mx-auto px-4 py-6">
           {/* Header */}
           <div className="mb-10">
-                  <div className="text-center mb-6">
-                    <h2 className="text-4xl font-black text-blue-700 mb-2">
-                      Your Learning Dashboard 📊
-                    </h2>
-                    <div className="flex items-center justify-center gap-4 mb-4">
-                      <div className="text-4xl">🧪</div>
-                      <div className="text-left">
-                        <h3 className="font-bold text-blue-700 text-xl">{user.name || user.email}</h3>
-                        <p className="text-gray-600">Explorer</p>
-                      </div>
-                    </div>
-                  </div>
+            {/* Mobile-First Header Layout */}
+            <div className="space-y-6 mb-8">
+              {/* CurioLab Title - Top on Mobile, Right on Desktop */}
+              <div className="flex justify-center lg:justify-end">
+                <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 text-center lg:text-right">
+                  🔬 CurioLab 🦉
+                </h1>
+              </div>
 
-                  {/* Progress Stats */}
-                  {userProgress && userProgress.sessions.length > 0 && (
+              {/* Authentication Section */}
+              <div className="flex justify-center lg:justify-start">
+                <div className="flex items-center gap-4">
+                  {user ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-gray-700">Welcome, {user.name || user.email}!</span>
+                      <button
+                        onClick={() => setShowProfile(true)}
+                        className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                      >
+                        My Profile
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          setAuthMode('login')
+                          setShowAuthModal(true)
+                        }}
+                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      >
+                        Sign In
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAuthMode('register')
+                          setShowAuthModal(true)
+                        }}
+                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                      >
+                        Sign Up
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Achievement Banner */}
+            {user && (
                     <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-6 mb-6">
                       <h3 className="font-bold text-blue-700 mb-4 text-center">Your Achievements</h3>
                       <div className="grid grid-cols-2 gap-4 text-center">
