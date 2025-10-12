@@ -764,54 +764,19 @@ export default function Home() {
             </div>
 
             {/* Achievement Banner */}
-            {user && (
-                    <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-6 mb-6">
-                      <h3 className="font-bold text-blue-700 mb-4 text-center">Your Achievements</h3>
-                      <div className="grid grid-cols-2 gap-4 text-center">
-                        <div className="bg-white rounded-lg p-3">
-                          <div className="text-2xl font-bold text-blue-600">{userProgress.topicsExplored}</div>
-                          <div className="text-sm text-gray-600">Topics Explored</div>
-                        </div>
-                        <div className="bg-white rounded-lg p-3">
-                          <div className="text-2xl font-bold text-green-600">{Math.floor(userProgress.totalTimeSpent / 60)}</div>
-                          <div className="text-sm text-gray-600">Minutes Learning</div>
-                        </div>
-                        {userProgress.learningStreak.currentStreak > 0 && (
-                          <>
-                            <div className="bg-white rounded-lg p-3">
-                              <div className="text-2xl font-bold text-orange-600">{userProgress.learningStreak.currentStreak}</div>
-                              <div className="text-sm text-gray-600">Current Streak</div>
-                            </div>
-                            <div className="bg-white rounded-lg p-3">
-                              <div className="text-2xl font-bold text-purple-600">{userProgress.learningStreak.longestStreak}</div>
-                              <div className="text-sm text-gray-600">Best Streak</div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
+          </div>
 
-                  {/* Action Buttons */}
-                  <div className="space-y-4">
-                    <button
-                      onClick={() => logout()}
-                      className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-lg"
-                    >
-                      🚪 Logout & Reset Progress
-                    </button>
-                    
-                    <button
-                      onClick={() => setShowProfile(false)}
-                      className="w-full bg-gray-100 text-gray-700 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors"
-                    >
-                      Continue Learning
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Create profile for new users
-                <div>
+        <main className="container mx-auto px-4 py-6">
+          {/* Header */}
+          <div className="mb-10">
+            {/* Mobile-First Header Layout */}
+            <div className="space-y-6 mb-8">
+              {/* CurioLab Title - Top on Mobile, Right on Desktop */}
+              <div className="flex justify-center lg:justify-end">
+                <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-teal-600 text-center lg:text-right">
+                  🔬 CurioLab 🦉
+                </h1>
+              </div>
                   <div className="text-center mb-6">
                     <h2 className="text-4xl font-black text-blue-700 mb-2">
                       🦉 Unlock Your Learning Journey! 🚀
