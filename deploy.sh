@@ -11,7 +11,12 @@ git pull origin main
 
 # Copy environment variables
 echo "⚙️  Setting up environment variables..."
-cp .env.production .env
+cp .env.production.example .env.production
+cp .env.example .env
+
+# Replace placeholder with actual API key
+sed -i 's/your_openai_api_key_here/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/g' .env
+sed -i 's/your_openai_api_key_here/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/g' .env.production
 
 # Stop existing containers
 echo "🛑 Stopping existing containers..."
