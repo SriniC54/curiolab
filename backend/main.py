@@ -426,7 +426,7 @@ async def generate_dimensions(topic_data: dict):
         raise HTTPException(status_code=500, detail=f"Dimension generation failed: {str(e)}")
 
 @app.post("/generate-content", response_model=ContentResponse)
-async def generate_content(request: ContentRequest, current_user: dict = Depends(get_current_user)):
+async def generate_content(request: ContentRequest, current_user: dict = None):
     """Generate grade-appropriate content for a given topic and dimension."""
     
     if not client.api_key:
@@ -484,15 +484,16 @@ async def generate_content(request: ContentRequest, current_user: dict = Depends
                 images=images
             )
         
-        # Record user progress for content viewing
-        await record_user_progress(
-            current_user["id"], 
-            request.topic, 
-            request.dimension, 
-            request.skill_level,
-            time_spent=0,  # Will be updated when they spend time reading
-            audio_played=False
-        )
+        # Record user progress for content viewing (only if user is logged in)
+        if current_user:
+            await record_user_progress(
+                current_user["id"], 
+                request.topic, 
+                request.dimension, 
+                request.skill_level,
+                time_spent=0,  # Will be updated when they spend time reading
+                audio_played=False
+            )
         
         return response
         

@@ -52,3 +52,8 @@ simple_app.py
 # Build files
 dist/
 build/
+
+# Cache directories (should not be committed)
+backend/content_cache/
+backend/audio_cache/
+backend/*.db
