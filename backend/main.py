@@ -426,7 +426,7 @@ async def generate_dimensions(topic_data: dict):
         raise HTTPException(status_code=500, detail=f"Dimension generation failed: {str(e)}")
 
 @app.post("/generate-content", response_model=ContentResponse)
-async def generate_content(request: ContentRequest, current_user: dict = None):
+async def generate_content(request: ContentRequest, authorization: HTTPAuthorizationCredentials = None):
     """Generate grade-appropriate content for a given topic and dimension."""
     
     if not client.api_key:
@@ -485,15 +485,22 @@ async def generate_content(request: ContentRequest, current_user: dict = None):
             )
         
         # Record user progress for content viewing (only if user is logged in)
-        if current_user:
-            await record_user_progress(
-                current_user["id"], 
-                request.topic, 
-                request.dimension, 
-                request.skill_level,
-                time_spent=0,  # Will be updated when they spend time reading
-                audio_played=False
-            )
+        if authorization:
+            try:
+                payload = verify_jwt_token(authorization.credentials)
+                user_id = payload["user_id"]
+                await record_user_progress(
+                    user_id, 
+                    request.topic, 
+                    request.dimension, 
+                    request.skill_level,
+                    time_spent=0,  # Will be updated when they spend time reading
+                    audio_played=False
+                )
+            except Exception as e:
+                # If token is invalid, just skip progress tracking
+                print(f"⚠️ Could not track progress for anonymous user: {e}")
+                pass
         
         return response
         
@@ -812,7 +819,7 @@ async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> lis
     return generic_images[:count]
 
 @app.post("/generate-audio")
-async def generate_content_audio(request: AudioRequest, current_user: dict = Depends(get_current_user)):
+async def generate_content_audio(request: AudioRequest, authorization: HTTPAuthorizationCredentials = None):
     """Generate or retrieve cached audio for content."""
     try:
         # Convert grade_level to skill_level
@@ -850,15 +857,23 @@ async def generate_content_audio(request: AudioRequest, current_user: dict = Dep
         # Check if audio is already cached
         cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)
         
-        # Record that user played audio for this topic
-        await record_user_progress(
-            current_user["id"], 
-            request.topic, 
-            request.dimension, 
-            skill_level_caps,
-            time_spent=0,  # Audio duration could be tracked in future
-            audio_played=True
-        )
+        # Record that user played audio for this topic (only if logged in)
+        if authorization:
+            try:
+                payload = verify_jwt_token(authorization.credentials)
+                user_id = payload["user_id"]
+                await record_user_progress(
+                    user_id, 
+                    request.topic, 
+                    request.dimension, 
+                    skill_level_caps,
+                    time_spent=0,  # Audio duration could be tracked in future
+                    audio_played=True
+                )
+            except Exception as e:
+                # If token is invalid, just skip progress tracking
+                print(f"⚠️ Could not track audio progress: {e}")
+                pass
         
         if cached_audio_file:
             return FileResponse(
