@@ -813,9 +813,9 @@ export default function Home() {
 
             {/* Mobile-Responsive Layout: Stack on Mobile, Side-by-Side on Desktop */}
             {selectedTopic && availableDimensions.length > 0 && (
-              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6 min-h-screen">
-                {/* Dimensions Panel - Top on Mobile, Left on Desktop */}
-                <div className="lg:col-span-4 xl:col-span-3 bg-gradient-to-br from-blue-50 to-cyan-100 rounded-2xl shadow-lg p-4 lg:p-6 lg:h-fit lg:sticky lg:top-6 border-2 border-blue-200">
+              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6">
+                {/* Dimensions Panel - Top on Mobile, Left on Desktop (Smaller for more reading space) */}
+                <div className="lg:col-span-3 xl:col-span-3 bg-gradient-to-br from-blue-50 to-cyan-100 rounded-2xl shadow-lg p-4 lg:p-6 lg:h-fit lg:sticky lg:top-6 border-2 border-blue-200">
                   <h3 className="text-2xl font-bold text-blue-700 mb-4">
                     📚 {selectedTopic}
                   </h3>
@@ -907,7 +907,8 @@ export default function Home() {
                 </div>
 
                 {/* Content Panel - Bottom on Mobile, Right on Desktop */}
-                <div className="lg:col-span-8 xl:col-span-9 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl shadow-lg p-4 lg:p-8 border-2 border-green-200 flex flex-col">
+                {/* Content Panel - Larger with improved reading experience */}
+                <div className="lg:col-span-9 xl:col-span-9 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl shadow-lg p-4 lg:p-8 border-2 border-green-200 flex flex-col">
                   {selectedDimension ? (
                     <div className="flex flex-col h-full">
                       <h2 className="text-3xl font-bold text-green-700 mb-6">
@@ -978,8 +979,8 @@ export default function Home() {
 
                       {content && (
                         <div>
-                          {/* Enhanced Content Display */}
-                          <div className="bg-gradient-to-br from-emerald-50 via-blue-50 to-indigo-50 rounded-3xl p-8 lg:p-10 shadow-xl border-2 border-emerald-100 flex-1 overflow-y-auto relative">
+                          {/* Enhanced Content Display - Scrollable Reading Pane */}
+                          <div className="bg-gradient-to-br from-emerald-50 via-blue-50 to-indigo-50 rounded-3xl p-8 lg:p-10 shadow-xl border-2 border-emerald-100 max-h-[75vh] overflow-y-auto relative">
                             <div className="mb-6">
                               <h3 className="text-3xl lg:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-blue-600 to-purple-600 mb-4 tracking-tight" style={{lineHeight: '1.1'}}>
                                 🦉 {selectedTopic}: {selectedDimension}
