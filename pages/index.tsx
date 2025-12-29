@@ -74,9 +74,11 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          topic,
-          dimension,
-          grade_level: gradeLevel
+          request: {
+            topic,
+            dimension,
+            grade_level: gradeLevel
+          }
         }),
       })
 
@@ -584,9 +586,11 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          topic: selectedTopic,
-          dimension: selectedDimension,
-          skill_level: selectedSkillLevel
+          request: {
+            topic: selectedTopic,
+            dimension: selectedDimension,
+            skill_level: selectedSkillLevel
+          }
         })
       })
 
