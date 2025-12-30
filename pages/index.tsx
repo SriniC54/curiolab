@@ -587,12 +587,20 @@ export default function Home() {
     startLearningSession(selectedTopic, selectedDimension, selectedSkillLevel)
     
     try {
+      // DEBUG: Check token status
+      console.log('🔍 FRONTEND DEBUG: user =', user)
+      console.log('🔍 FRONTEND DEBUG: token =', token)
+      console.log('🔍 FRONTEND DEBUG: isAuthenticated =', isAuthenticated)
+      
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       }
       
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
+        console.log('🔍 FRONTEND DEBUG: Adding Authorization header with token')
+      } else {
+        console.log('🔍 FRONTEND DEBUG: No token available, sending without Authorization')
       }
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`, {
