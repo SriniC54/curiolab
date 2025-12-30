@@ -429,6 +429,14 @@ async def generate_dimensions(topic_data: dict):
 async def generate_content(request: ContentRequest, authorization: HTTPAuthorizationCredentials = None):
     """Generate grade-appropriate content for a given topic and dimension."""
     
+    # DEBUG: Check what authorization we're receiving
+    print(f"🔍 DEBUG: authorization = {authorization}")
+    print(f"🔍 DEBUG: authorization type = {type(authorization)}")
+    if authorization:
+        print(f"🔍 DEBUG: authorization.credentials = {authorization.credentials}")
+    else:
+        print(f"🔍 DEBUG: No authorization header received")
+    
     if not client.api_key:
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
     
@@ -822,6 +830,14 @@ async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> lis
 async def generate_content_audio(request: AudioRequest, authorization: HTTPAuthorizationCredentials = None):
     """Generate or retrieve cached audio for content."""
     try:
+        # DEBUG: Check what authorization we're receiving for audio
+        print(f"🔍 AUDIO DEBUG: authorization = {authorization}")
+        print(f"🔍 AUDIO DEBUG: authorization type = {type(authorization)}")
+        if authorization:
+            print(f"🔍 AUDIO DEBUG: authorization.credentials = {authorization.credentials}")
+        else:
+            print(f"🔍 AUDIO DEBUG: No authorization header received")
+        
         # Convert grade_level to skill_level
         skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
         skill_level_caps = skill_level.capitalize()  # "Beginner", "Explorer", "Expert"
