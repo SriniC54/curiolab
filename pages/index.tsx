@@ -29,6 +29,7 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
+  const { token } = useAuth()
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null)
@@ -68,11 +69,17 @@ const AudioPlayer = ({ topic, dimension, gradeLevel }: AudioPlayerProps) => {
         })
       }, 400) // Update every 400ms for smooth animation
       
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-audio`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           request: {
             topic,
@@ -241,7 +248,7 @@ interface UserProgress {
 
 export default function Home() {
   // Authentication
-  const { user, isAuthenticated, isLoading, logout } = useAuth()
+  const { user, isAuthenticated, isLoading, logout, token } = useAuth()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [showProfile, setShowProfile] = useState(false)
@@ -580,11 +587,17 @@ export default function Home() {
     startLearningSession(selectedTopic, selectedDimension, selectedSkillLevel)
     
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           request: {
             topic: selectedTopic,
