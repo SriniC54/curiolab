@@ -6,6 +6,8 @@ from pydantic import BaseModel, EmailStr
 import os
 from dotenv import load_dotenv
 import openai
+from google import genai
+from google.genai import types
 import textstat
 import json
 import requests
@@ -19,7 +21,7 @@ import jwt
 from datetime import datetime, timedelta
 from typing import Optional
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 app = FastAPI(title="CurioLab API", version="0.1.0")
 
@@ -37,8 +39,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client
+# Initialize OpenAI client (TTS only)
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Initialize Gemini client (text generation)
+gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Cache directory setup
 CACHE_DIR = Path("content_cache")
@@ -89,6 +94,81 @@ def init_database():
         )
     """)
     
+    # Safe ALTER TABLE — wrapped so re-runs on existing DB don't crash
+    for alter_sql in [
+        "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'",
+        "ALTER TABLE users ADD COLUMN institution_id INTEGER REFERENCES institutions(id)"
+    ]:
+        try:
+            cursor.execute(alter_sql)
+        except Exception:
+            pass  # Column already exists
+
+    # Institutions table (optional — independent teachers have no institution)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS institutions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            join_code TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Classes belong to a teacher, optionally to an institution
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS classes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL REFERENCES users(id),
+            institution_id INTEGER REFERENCES institutions(id),
+            name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Batches belong to a class
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL REFERENCES classes(id),
+            name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Students assigned to batches
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS batch_students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL REFERENCES batches(id),
+            student_id INTEGER NOT NULL REFERENCES users(id),
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(batch_id, student_id)
+        )
+    """)
+
+    # Topics assigned to a batch
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS batch_topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL REFERENCES batches(id),
+            topic TEXT NOT NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(batch_id, topic)
+        )
+    """)
+
+    # Quiz results
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            topic TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            total INTEGER NOT NULL DEFAULT 5,
+            taken_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -104,11 +184,12 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against its hash."""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_jwt_token(user_id: int, email: str) -> str:
+def create_jwt_token(user_id: int, email: str, role: str = "student") -> str:
     """Create a JWT token for user authentication."""
     payload = {
         "user_id": user_id,
         "email": email,
+        "role": role,
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -127,23 +208,43 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     """Get current user from JWT token."""
     token = credentials.credentials
     payload = verify_jwt_token(token)
-    
+
     # Get user from database to ensure they still exist
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, name, created_at FROM users WHERE id = ?", (payload["user_id"],))
+    cursor.execute(
+        "SELECT id, email, name, created_at, role, institution_id FROM users WHERE id = ?",
+        (payload["user_id"],)
+    )
     user = cursor.fetchone()
     conn.close()
-    
+
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    
+
+    # Graceful fallback for old tokens that don't have role in payload
+    role = payload.get("role") or user[4] or "student"
+
     return {
         "id": user[0],
-        "email": user[1], 
+        "email": user[1],
         "name": user[2],
-        "created_at": user[3]
+        "created_at": user[3],
+        "role": role,
+        "institution_id": user[5]
     }
+
+def require_teacher(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency that requires the current user to be a teacher."""
+    if current_user["role"] != "teacher":
+        raise HTTPException(status_code=403, detail="Teacher access required")
+    return current_user
+
+def require_student(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency that requires the current user to be a student."""
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+    return current_user
 
 async def record_user_progress(user_id: int, topic: str, dimension: str, skill_level: str, time_spent: int = 0, audio_played = False):
     """Record or update user progress for a topic."""
@@ -189,70 +290,67 @@ async def record_user_progress(user_id: int, topic: str, dimension: str, skill_l
         print(f"❌ Error recording progress: {e}")
         # Don't raise exception here to avoid breaking the main functionality
 
-def get_cache_key(topic: str, dimension: str, skill_level: str) -> str:
+def get_cache_key(topic: str, skill_level: str) -> str:
     """Generate a consistent cache key for content."""
     # Normalize inputs to handle variations in capitalization/spacing
-    normalized = f"{topic.lower().strip()}-{dimension.lower().strip()}-{skill_level.lower().strip()}"
+    normalized = f"{topic.lower().strip()}-{skill_level.lower().strip()}"
     # Use hash to handle special characters and ensure valid filename
     cache_hash = hashlib.md5(normalized.encode()).hexdigest()[:8]
     return f"{normalized.replace(' ', '_')}-{cache_hash}"
 
-def get_cached_content(topic: str, dimension: str, skill_level: str) -> dict | None:
+def get_cached_content(topic: str, skill_level: str) -> dict | None:
     """Retrieve cached content if it exists."""
-    cache_key = get_cache_key(topic, dimension, skill_level)
+    cache_key = get_cache_key(topic, skill_level)
     cache_file = CACHE_DIR / f"{cache_key}.json"
-    
+
     try:
         if cache_file.exists():
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cached_data = json.load(f)
-                print(f"✅ Cache HIT for {topic}-{dimension}-{skill_level}")
+                print(f"✅ Cache HIT for {topic}-{skill_level}")
                 return cached_data
     except Exception as e:
         print(f"❌ Cache read error for {cache_key}: {e}")
-    
-    print(f"💭 Cache MISS for {topic}-{dimension}-{skill_level}")
+
+    print(f"💭 Cache MISS for {topic}-{skill_level}")
     return None
 
-def cache_content(topic: str, dimension: str, skill_level: str, content: str, word_count: int, readability_score: float) -> None:
+def cache_content(topic: str, skill_level: str, content: str, word_count: int, readability_score: float) -> None:
     """Cache generated content for future use."""
-    cache_key = get_cache_key(topic, dimension, skill_level)
+    cache_key = get_cache_key(topic, skill_level)
     cache_file = CACHE_DIR / f"{cache_key}.json"
-    
+
     cache_data = {
         "topic": topic,
-        "dimension": dimension,
         "skill_level": skill_level,
         "content": content,
         "word_count": word_count,
         "readability_score": readability_score,
-        "cached_at": json.dumps({"timestamp": "now"})  # Will be replaced with actual timestamp
     }
-    
+
     try:
         with open(cache_file, 'w', encoding='utf-8') as f:
-            # Add actual timestamp
             import datetime
             cache_data["cached_at"] = datetime.datetime.now().isoformat()
             json.dump(cache_data, f, ensure_ascii=False, indent=2)
-        print(f"💾 Cached content for {topic}-{dimension}-{skill_level}")
+        print(f"💾 Cached content for {topic}-{skill_level}")
     except Exception as e:
         print(f"❌ Cache write error for {cache_key}: {e}")
 
-def get_audio_cache_key(topic: str, dimension: str, skill_level: str) -> str:
+def get_audio_cache_key(topic: str, skill_level: str) -> str:
     """Generate cache key for audio files."""
-    return get_cache_key(topic, dimension, skill_level)
+    return get_cache_key(topic, skill_level)
 
-def get_cached_audio(topic: str, dimension: str, skill_level: str) -> Path | None:
+def get_cached_audio(topic: str, skill_level: str) -> Path | None:
     """Check if audio file exists in cache."""
-    cache_key = get_audio_cache_key(topic, dimension, skill_level)
+    cache_key = get_audio_cache_key(topic, skill_level)
     audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
-    
+
     if audio_file.exists():
-        print(f"🎵 Audio cache HIT for {topic}-{dimension}-{skill_level}")
+        print(f"🎵 Audio cache HIT for {topic}-{skill_level}")
         return audio_file
-    
-    print(f"🎵 Audio cache MISS for {topic}-{dimension}-{skill_level}")
+
+    print(f"🎵 Audio cache MISS for {topic}-{skill_level}")
     return None
 
 def clean_text_for_tts(content: str) -> str:
@@ -270,64 +368,68 @@ def clean_text_for_tts(content: str) -> str:
     
     return text
 
-async def generate_audio(topic: str, dimension: str, skill_level: str, content: str) -> Path:
+async def generate_audio(topic: str, skill_level: str, content: str) -> Path:
     """Generate audio using OpenAI TTS and cache it."""
-    cache_key = get_audio_cache_key(topic, dimension, skill_level)
+    cache_key = get_audio_cache_key(topic, skill_level)
     audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
-    
+
     # Check cache first
     if audio_file.exists():
         return audio_file
-    
+
     try:
-        # Clean content for TTS
         clean_content = clean_text_for_tts(content)
-        
-        print(f"🎤 Generating audio for {topic}-{dimension}-{skill_level}")
-        
-        # Generate audio using OpenAI TTS
+        print(f"🎤 Generating audio for {topic}-{skill_level}")
+
         response = client.audio.speech.create(
-            model="tts-1",  # Use tts-1 for faster generation, tts-1-hd for higher quality
-            voice="nova",   # Kid-friendly voice (options: alloy, echo, fable, onyx, nova, shimmer)
+            model="tts-1",
+            voice="nova",
             input=clean_content
         )
-        
-        # Save to cache
+
         with open(audio_file, 'wb') as f:
             for chunk in response.iter_bytes():
                 f.write(chunk)
-        
-        print(f"🎵 Audio cached for {topic}-{dimension}-{skill_level}")
+
+        print(f"🎵 Audio cached for {topic}-{skill_level}")
         return audio_file
-        
+
     except Exception as e:
         print(f"❌ Audio generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
 
 class AudioRequest(BaseModel):
     topic: str
-    dimension: str
+    dimension: str = ""  # deprecated, ignored
     grade_level: int
 
 class ContentRequest(BaseModel):
     topic: str
-    dimension: str
     skill_level: str
 
 class ContentResponse(BaseModel):
     topic: str
-    dimension: str
     skill_level: str
     content: str
     readability_score: float
     word_count: int
     images: list
 
+class QuizRequest(BaseModel):
+    topic: str
+    content: str
+
+class QuizResultSubmission(BaseModel):
+    topic: str
+    score: int
+    total: int
+
 # Authentication models
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
     name: Optional[str] = None
+    role: str = "student"
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -407,61 +509,29 @@ def is_topic_appropriate(topic: str) -> bool:
     
     return True
 
-@app.post("/generate-dimensions")
-async def generate_dimensions(topic_data: dict):
-    """Generate educational dimensions for any topic."""
-    topic = topic_data.get("topic", "").strip()
-    
-    if not topic or len(topic) < 2:
-        raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
-    
-    # Basic topic appropriateness check
-    if not is_topic_appropriate(topic):
-        raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
-    
-    try:
-        dimensions = await generate_dimensions_for_topic(topic)
-        return {"topic": topic, "dimensions": dimensions}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Dimension generation failed: {str(e)}")
 
 @app.post("/generate-content", response_model=ContentResponse)
 async def generate_content(request: ContentRequest, authorization: HTTPAuthorizationCredentials = None):
-    """Generate grade-appropriate content for a given topic and dimension."""
-    
-    # DEBUG: Check what authorization we're receiving
-    print(f"🔍 DEBUG: authorization = {authorization}")
-    print(f"🔍 DEBUG: authorization type = {type(authorization)}")
-    if authorization:
-        print(f"🔍 DEBUG: authorization.credentials = {authorization.credentials}")
-    else:
-        print(f"🔍 DEBUG: No authorization header received")
-    
-    if not client.api_key:
-        raise HTTPException(status_code=500, detail="OpenAI API key not configured")
-    
-    # Basic topic validation (just ensure it's not empty)
+    """Generate educational content for a given topic."""
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
+
     if not request.topic or len(request.topic.strip()) < 2:
         raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
-    
-    # Basic topic appropriateness check
+
     if not is_topic_appropriate(request.topic):
         raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
-    
-    # Only allow specific skill levels
+
     if request.skill_level not in ["Beginner", "Explorer", "Expert"]:
         raise HTTPException(status_code=400, detail="Only Beginner, Explorer, and Expert skill levels are supported")
-    
+
     try:
-        # First, check if content is cached
-        cached_content = get_cached_content(request.topic, request.dimension, request.skill_level)
-        
+        cached_content = get_cached_content(request.topic, request.skill_level)
+
         if cached_content:
-            # Return cached content
-            images = await get_unsplash_images(request.topic, request.dimension, 3)
+            images = await get_unsplash_images(request.topic, 3)
             response = ContentResponse(
                 topic=cached_content["topic"],
-                dimension=cached_content["dimension"],
                 skill_level=cached_content["skill_level"],
                 content=cached_content["content"],
                 readability_score=cached_content["readability_score"],
@@ -469,163 +539,96 @@ async def generate_content(request: ContentRequest, authorization: HTTPAuthoriza
                 images=images
             )
         else:
-            # If not cached, generate new content using OpenAI
-            content = await generate_topic_content(request.topic, request.dimension, request.skill_level)
-            
-            # Get relevant images from Unsplash
-            images = await get_unsplash_images(request.topic, request.dimension, 3)
-            
-            # Calculate readability score
+            content = await generate_topic_content(request.topic, request.skill_level)
+            images = await get_unsplash_images(request.topic, 3)
             fk_score = textstat.flesch_reading_ease(content)
             word_count = len(content.split())
-            
-            # Cache the newly generated content
-            cache_content(request.topic, request.dimension, request.skill_level, content, word_count, fk_score)
-            
+            cache_content(request.topic, request.skill_level, content, word_count, fk_score)
             response = ContentResponse(
                 topic=request.topic,
-                dimension=request.dimension,
                 skill_level=request.skill_level,
                 content=content,
                 readability_score=fk_score,
                 word_count=word_count,
                 images=images
             )
-        
-        # Record user progress for content viewing (only if user is logged in)
+
+        # Record progress if user is logged in
         if authorization:
             try:
                 payload = verify_jwt_token(authorization.credentials)
                 user_id = payload["user_id"]
                 await record_user_progress(
-                    user_id, 
-                    request.topic, 
-                    request.dimension, 
+                    user_id,
+                    request.topic,
+                    "",  # dimension no longer used
                     request.skill_level,
-                    time_spent=0,  # Will be updated when they spend time reading
+                    time_spent=0,
                     audio_played=False
                 )
             except Exception as e:
-                # If token is invalid, just skip progress tracking
-                print(f"⚠️ Could not track progress for anonymous user: {e}")
-                pass
-        
+                print(f"⚠️ Could not track progress: {e}")
+
         return response
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
 
-async def generate_dimensions_for_topic(topic: str) -> list:
-    """Generate 5 relevant dimensions for any topic using AI."""
-    
-    system_prompt = f"""You are an educational content expert who creates safe, age-appropriate content for children. For the given topic, generate exactly 5 educational dimensions that would be interesting and appropriate for young learners.
+async def generate_topic_content(topic: str, skill_level: str) -> str:
+    """Generate comprehensive educational content for any topic using AI."""
 
-SAFETY REQUIREMENTS (CRITICAL):
-- Content must be completely safe and appropriate for children ages 8-18
-- NO violence, weapons, death, scary content, or disturbing themes
-- NO inappropriate, sexual, or mature themes
-- NO political controversy or divisive topics
-- Focus on educational, positive, and inspiring aspects only
-- If topic seems inappropriate, focus on safe educational angles only
-
-CONTENT REQUIREMENTS:
-- Return exactly 5 dimensions
-- Each dimension should be 1-2 words (like "Science", "History", "Geography")  
-- Make them relevant to the topic
-- Educational and age-appropriate for young learners
-- Diverse perspectives on the topic
-
-TOPIC: {topic}
-
-Return only a simple comma-separated list, nothing else. Example format:
-Science, History, Geography, Culture, Environment"""
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Generate 5 educational dimensions for: {topic}"}
-            ],
-            max_tokens=100,
-            temperature=0.7
-        )
-        
-        dimensions_text = response.choices[0].message.content.strip()
-        dimensions = [dim.strip() for dim in dimensions_text.split(',')]
-        
-        # Ensure we have exactly 5 dimensions
-        if len(dimensions) != 5:
-            # Fallback to generic dimensions if AI didn't follow format
-            dimensions = ["Science", "History", "Geography", "Culture", "Environment"]
-            
-        return dimensions
-        
-    except Exception as e:
-        # Fallback dimensions if AI generation fails
-        return ["Science", "History", "Geography", "Culture", "Environment"]
-
-async def generate_topic_content(topic: str, dimension: str, skill_level: str) -> str:
-    """Generate educational content for any topic, dimension, and skill level using AI."""
-    
-    # Skill-specific vocabulary and complexity guidelines with exclusive content focus
     skill_guidelines = {
         "Beginner": {
             "vocab": "simple, everyday words and short sentences",
             "examples": "basic examples kids can see and touch in their daily lives",
             "sentence_length": "8-12 words per sentence",
-            "target_words": "300 words",
-            "target_lines": "12-15 lines",
-            "paragraphs": "3-4 short paragraphs",
-            "focus": "fundamental concepts, 'what is it?' and basic 'why?'",
-            "avoid": "complex processes, detailed explanations, or advanced terminology"
+            "target_words": "900 words",
+            "paragraphs": "6-8 paragraphs",
+            "focus": "fundamental concepts from multiple interesting angles — what it is, why it matters, how it works, and fun facts",
+            "avoid": "highly technical details or advanced terminology"
         },
         "Explorer": {
-            "vocab": "intermediate vocabulary with some subject-specific terms explained", 
+            "vocab": "intermediate vocabulary with some subject-specific terms explained",
             "examples": "engaging examples with connections to how things work",
             "sentence_length": "10-15 words per sentence",
-            "target_words": "500 words",
-            "target_lines": "20-25 lines", 
-            "paragraphs": "4-5 paragraphs",
-            "focus": "'how does it work?' and 'what makes it special?' with processes and connections",
-            "avoid": "overly simple explanations OR highly technical details covered in Expert level"
+            "target_words": "900 words",
+            "paragraphs": "6-8 paragraphs",
+            "focus": "comprehensive coverage from multiple angles — history, science, culture, real-world applications, and surprising facts",
+            "avoid": "overly simple or highly technical extremes"
         },
         "Expert": {
-            "vocab": "advanced vocabulary, technical terms with explanations, varied sentence structures",
-            "examples": "complex examples with scientific explanations, real-world applications, and deeper connections",
-            "sentence_length": "12-20 words per sentence", 
-            "target_words": "1000 words",
-            "target_lines": "full page content with multiple comprehensive sections",
-            "paragraphs": "6-8 well-developed paragraphs with clear section breaks",
-            "focus": "'why does this matter?' with advanced concepts, implications, and sophisticated analysis",
-            "avoid": "basic explanations covered in Beginner/Explorer levels"
+            "vocab": "advanced vocabulary and technical terms with explanations",
+            "examples": "complex examples with scientific explanations and deeper connections",
+            "sentence_length": "12-20 words per sentence",
+            "target_words": "900 words",
+            "paragraphs": "6-8 well-developed paragraphs",
+            "focus": "in-depth analysis covering mechanisms, implications, history, science, and sophisticated connections",
+            "avoid": "basic or superficial explanations"
         }
     }
-    
+
     guidelines = skill_guidelines[skill_level]
-    
+
     system_prompt = f"""You are an expert educational content writer who creates engaging, safe, age-appropriate content like National Geographic Kids or Highlights.
 
 CRITICAL SAFETY REQUIREMENTS:
 - Content must be 100% safe and appropriate for children ages 8-18
 - NO violence, weapons, death, injury, scary or disturbing content
-- NO inappropriate, sexual, or mature themes whatsoever  
+- NO inappropriate, sexual, or mature themes whatsoever
 - NO political controversy, divisive topics, or sensitive current events
-- NO graphic descriptions or frightening scenarios
 - Focus only on positive, educational, inspiring, and uplifting content
 - Use encouraging, wonder-filled language that builds curiosity safely
-- If any aspect of the topic could be inappropriate, focus only on safe educational angles
 
 SKILL LEVEL: {skill_level}
-TOPIC: {topic.title()} - {dimension.title()}
+TOPIC: {topic.title()}
 
-EXCLUSIVE CONTENT REQUIREMENTS FOR {skill_level.upper()} LEVEL:
+CONTENT REQUIREMENTS:
+- Write EXACTLY {guidelines['target_words']} total words (this is crucial!)
+- Cover the topic comprehensively from multiple interesting angles
 - FOCUS ON: {guidelines['focus']}
 - AVOID: {guidelines['avoid']}
-- This content should be UNIQUE to the {skill_level} level - do NOT repeat concepts from other skill levels
-- Write EXACTLY {guidelines['target_words']} total words (this is crucial!)
-- Create {guidelines['paragraphs']} with clear section headings
-- Structure like a children's magazine article with multiple sections
+- Create {guidelines['paragraphs']} main sections with clear section headings
+- Structure like a children's magazine article
 - Use {guidelines['vocab']}
 - Keep sentences to {guidelines['sentence_length']}
 - Use {guidelines['examples']}
@@ -633,59 +636,84 @@ EXCLUSIVE CONTENT REQUIREMENTS FOR {skill_level.upper()} LEVEL:
 CONTENT STRUCTURE:
 - Start with an engaging introduction paragraph (no heading needed)
 - Create {guidelines['paragraphs']} main sections, each with:
-  * **Clear heading with emoji** (like "🔥 How Hot Are They?" or "🌿 What Do They Eat?")
-  * Immediately follow the heading with 2-3 paragraphs of detailed explanation
-  * Keep heading and content together in the same section
+  * **Clear heading with emoji** (like "🔥 How Hot Are They?" or "🌿 Ancient Origins")
+  * Immediately follow the heading with 2-3 paragraphs of detailed content
 - Include surprising facts and "wow" moments throughout
-- End with a concluding paragraph that inspires wonder
-- NO separate headings without content - always put content right after each heading
+- End with an inspiring conclusion paragraph
+- NO separate headings without content
 
 WRITING STYLE:
 - Write like you're talking to curious, intelligent kids
-- Use vivid descriptions and imagery that paint pictures in their minds
-- Include surprising facts, cool examples, and "wow" moments
-- Make complex ideas accessible through analogies kids understand
-- Create natural breaks between sections (perfect for images later)
-- Balance education with entertainment - make learning FUN!
+- Use vivid descriptions and imagery
+- Include surprising facts and "wow" moments
+- Make complex ideas accessible through analogies
+- Balance education with entertainment — make learning FUN!"""
 
-Focus on the {dimension} aspect of {topic} and make it feel like the most interesting magazine article they've ever read about this topic."""
+    content_prompt = f"""Write a comprehensive, fascinating {skill_level}-level magazine article about {topic}.
 
-    # AI generates the specific content prompt based on topic, dimension, and skill level
-    content_prompt = f"""Write a fascinating {skill_level}-level magazine article about {topic} focusing on the {dimension} aspects.
+Cover {topic} from multiple interesting angles — include its history, how it works scientifically, its cultural significance, surprising facts, real-world applications, and why it matters today.
 
-EXCLUSIVE {skill_level.upper()} LEVEL REQUIREMENTS:
-- Make it perfect for {skill_level} learners who are curious about {topic}
-- {guidelines['focus']} 
-- AVOID: {guidelines['avoid']}
-- Focus specifically on {dimension} aspects of {topic} at the {skill_level} level
-- Include multiple sections with clear headings appropriate for {skill_level} complexity
-- Add surprising facts and insights perfect for {skill_level} understanding
-- Use vivid descriptions that help learners visualize at their {skill_level} comprehension
-- Include real examples and stories that connect to {skill_level} learners
-- Create natural section breaks (these will have images added later)
+Make it feel like the most interesting magazine article a curious kid has ever read about {topic}.
 
-STRUCTURE YOUR {skill_level.upper()} ARTICLE:
-1. **Catchy opening** that hooks {skill_level} readers immediately
-2. **3-4 main sections** with subheadings covering {skill_level}-appropriate {dimension} aspects of {topic}
-3. **Facts section** with {skill_level}-appropriate amazing details they'll want to share
-4. **Real-world connections** showing how this relates to {skill_level} learners' understanding
-5. **Inspiring conclusion** that makes them want to explore the next skill level
+Write EXACTLY {guidelines['target_words']} words with {guidelines['paragraphs']} sections."""
 
-CRITICAL: This should be EXCLUSIVE {skill_level} content - completely different from what Beginner, Explorer, or Expert levels would cover. Focus only on {guidelines['focus']} and avoid {guidelines['avoid']}."""
-
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content_prompt}
-        ],
-        max_tokens=1500,
-        temperature=0.7
+    response = gemini_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"{system_prompt}\n\n{content_prompt}",
+        config=types.GenerateContentConfig(max_output_tokens=3000, temperature=0.7)
     )
-    
-    return response.choices[0].message.content.strip()
 
-async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> list:
+    return response.text.strip()
+
+
+async def generate_quiz_questions(topic: str, content: str) -> list:
+    """Generate 5 MCQ questions based on article content."""
+    prompt = f"""Based on this educational article about {topic}, create exactly 5 multiple choice questions.
+
+ARTICLE:
+{content[:4000]}
+
+Return ONLY a valid JSON array with exactly this structure, no markdown, no explanation:
+[
+  {{
+    "question": "Question text here?",
+    "options": {{"A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D"}},
+    "correct": "A"
+  }}
+]
+
+Requirements:
+- Exactly 5 questions
+- Each tests understanding of the article
+- 4 options per question (A, B, C, D)
+- One correct answer per question
+- Questions appropriate for ages 8-18
+- Mix factual recall with comprehension"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.3)
+        )
+
+        text = response.text.strip()
+        # Strip markdown code blocks if present
+        if "```" in text:
+            text = re.sub(r"```(?:json)?\n?", "", text).strip()
+
+        questions = json.loads(text)
+
+        if not isinstance(questions, list) or len(questions) != 5:
+            raise ValueError(f"Expected 5 questions, got {len(questions) if isinstance(questions, list) else 'non-list'}")
+
+        return questions
+
+    except Exception as e:
+        print(f"❌ Quiz generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
+
+async def get_unsplash_images(topic: str, count: int = 3) -> list:
     """Get relevant images from Unsplash for the topic and dimension."""
     
     # For now, let's use curated images that match topics
@@ -830,111 +858,74 @@ async def get_unsplash_images(topic: str, dimension: str, count: int = 3) -> lis
 async def generate_content_audio(request: AudioRequest, authorization: HTTPAuthorizationCredentials = None):
     """Generate or retrieve cached audio for content."""
     try:
-        # DEBUG: Check what authorization we're receiving for audio
-        print(f"🔍 AUDIO DEBUG: authorization = {authorization}")
-        print(f"🔍 AUDIO DEBUG: authorization type = {type(authorization)}")
-        if authorization:
-            print(f"🔍 AUDIO DEBUG: authorization.credentials = {authorization.credentials}")
-        else:
-            print(f"🔍 AUDIO DEBUG: No authorization header received")
-        
-        # Convert grade_level to skill_level
         skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
-        skill_level_caps = skill_level.capitalize()  # "Beginner", "Explorer", "Expert"
-        
-        # First check if we have the content cached (try both cases AND check if content is displayed)
-        cached_content = get_cached_content(request.topic, request.dimension, skill_level_caps)
+        skill_level_caps = skill_level.capitalize()
+
+        cached_content = get_cached_content(request.topic, skill_level_caps)
         if not cached_content:
-            cached_content = get_cached_content(request.topic, request.dimension, skill_level)
-        
-        # Also check for any existing content with this topic/dimension regardless of case/timing
-        if not cached_content:
-            # Try to find ANY cached content for this topic/dimension combination
-            import glob
-            cache_pattern = CACHE_DIR / f"{request.topic.lower().strip()}-{request.dimension.lower().strip()}-*.json"
-            matching_files = list(glob.glob(str(cache_pattern)))
-            if matching_files:
-                # Use the most recent existing content file
-                latest_file = max(matching_files, key=lambda f: Path(f).stat().st_mtime)
-                try:
-                    with open(latest_file, 'r', encoding='utf-8') as f:
-                        cached_content = json.load(f)
-                        print(f"🔄 Using existing content from {Path(latest_file).name}")
-                except Exception as e:
-                    print(f"❌ Error reading existing content: {e}")
-                    cached_content = None
-        
+            cached_content = get_cached_content(request.topic, skill_level)
+
         if not cached_content:
             raise HTTPException(
                 status_code=404,
-                detail="Please generate content first by clicking '🚀 Start Learning!' button."
+                detail="Please generate content first."
             )
-        
-        # Check if audio is already cached
-        cached_audio_file = get_cached_audio(request.topic, request.dimension, skill_level)
-        
-        # Record that user played audio for this topic (only if logged in)
+
+        cached_audio_file = get_cached_audio(request.topic, skill_level)
+
         if authorization:
             try:
                 payload = verify_jwt_token(authorization.credentials)
                 user_id = payload["user_id"]
                 await record_user_progress(
-                    user_id, 
-                    request.topic, 
-                    request.dimension, 
+                    user_id,
+                    request.topic,
+                    "",
                     skill_level_caps,
-                    time_spent=0,  # Audio duration could be tracked in future
+                    time_spent=0,
                     audio_played=True
                 )
             except Exception as e:
-                # If token is invalid, just skip progress tracking
                 print(f"⚠️ Could not track audio progress: {e}")
-                pass
-        
+
         if cached_audio_file:
             return FileResponse(
                 path=cached_audio_file,
                 media_type="audio/mpeg",
-                filename=f"{request.topic}-{request.dimension}-grade{request.grade_level}.mp3"
+                filename=f"{request.topic}-grade{request.grade_level}.mp3"
             )
-        
-        # Generate new audio
-        audio_file = await generate_audio(
-            request.topic, 
-            request.dimension, 
-            skill_level, 
-            cached_content["content"]
-        )
-        
+
+        audio_file = await generate_audio(request.topic, skill_level, cached_content["content"])
+
         return FileResponse(
             path=audio_file,
-            media_type="audio/mpeg", 
-            filename=f"{request.topic}-{request.dimension}-grade{request.grade_level}.mp3"
+            media_type="audio/mpeg",
+            filename=f"{request.topic}-grade{request.grade_level}.mp3"
         )
-        
+
     except Exception as e:
         print(f"❌ Audio generation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/audio/{topic}/{dimension}/{skill_level}")
-async def get_audio_file(topic: str, dimension: str, skill_level: str):
+@app.get("/audio/{topic}/{skill_level}")
+async def get_audio_file(topic: str, skill_level: str):
     """Direct endpoint to get audio file if it exists."""
-    cached_audio_file = get_cached_audio(topic, dimension, skill_level)
-    
+    cached_audio_file = get_cached_audio(topic, skill_level)
+
     if cached_audio_file:
         return FileResponse(
             path=cached_audio_file,
             media_type="audio/mpeg",
-            filename=f"{topic}-{dimension}-{skill_level}.mp3"
+            filename=f"{topic}-{skill_level}.mp3"
         )
-    
+
     raise HTTPException(status_code=404, detail="Audio file not found. Generate content and audio first.")
 
-@app.get("/content-exists/{topic}/{dimension}/{skill_level}")
-async def check_content_exists(topic: str, dimension: str, skill_level: str):
+@app.get("/content-exists/{topic}/{skill_level}")
+async def check_content_exists(topic: str, skill_level: str):
     """Check if content exists in cache without generating it."""
-    cached_content = get_cached_content(topic, dimension, skill_level)
-    
+    cached_content = get_cached_content(topic, skill_level)
+
     if cached_content:
         return {"exists": True, "cached": True}
     else:
@@ -954,27 +945,32 @@ async def register_user(user_data: UserRegister):
             conn.close()
             raise HTTPException(status_code=400, detail="Email already registered")
         
+        # Validate role
+        if user_data.role not in ("teacher", "student"):
+            raise HTTPException(status_code=400, detail="role must be 'teacher' or 'student'")
+
         # Hash password and create user
         password_hash = hash_password(user_data.password)
         cursor.execute(
-            "INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)",
-            (user_data.email, password_hash, user_data.name)
+            "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
+            (user_data.email, password_hash, user_data.name, user_data.role)
         )
         user_id = cursor.lastrowid
-        
+
         conn.commit()
         conn.close()
-        
+
         # Create JWT token
-        token = create_jwt_token(user_id, user_data.email)
-        
+        token = create_jwt_token(user_id, user_data.email, user_data.role)
+
         return {
             "message": "User registered successfully",
             "token": token,
             "user": {
                 "id": user_id,
                 "email": user_data.email,
-                "name": user_data.name
+                "name": user_data.name,
+                "role": user_data.role
             }
         }
         
@@ -990,15 +986,15 @@ async def login_user(user_data: UserLogin):
         
         # Get user from database
         cursor.execute(
-            "SELECT id, email, password_hash, name FROM users WHERE email = ?", 
+            "SELECT id, email, password_hash, name, role FROM users WHERE email = ?",
             (user_data.email,)
         )
         user = cursor.fetchone()
-        
+
         if not user or not verify_password(user_data.password, user[2]):
             conn.close()
             raise HTTPException(status_code=401, detail="Invalid email or password")
-        
+
         # Update last login
         cursor.execute(
             "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1006,17 +1002,20 @@ async def login_user(user_data: UserLogin):
         )
         conn.commit()
         conn.close()
-        
+
+        role = user[4] or "student"
+
         # Create JWT token
-        token = create_jwt_token(user[0], user[1])
-        
+        token = create_jwt_token(user[0], user[1], role)
+
         return {
             "message": "Login successful",
             "token": token,
             "user": {
                 "id": user[0],
                 "email": user[1],
-                "name": user[3]
+                "name": user[3],
+                "role": role
             }
         }
         
@@ -1088,6 +1087,318 @@ async def track_reading_time(request: TimeTrackingRequest, current_user: dict = 
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to track time: {str(e)}")
+
+@app.post("/generate-quiz")
+async def generate_quiz(request: QuizRequest):
+    """Generate 5 MCQ quiz questions based on article content."""
+    if not request.topic or len(request.topic.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Topic must be at least 2 characters")
+    try:
+        questions = await generate_quiz_questions(request.topic, request.content)
+        return {"questions": questions}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
+
+
+@app.post("/submit-quiz")
+async def submit_quiz(request: QuizResultSubmission, current_user: dict = Depends(get_current_user)):
+    """Save quiz result for authenticated user."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO quiz_results (user_id, topic, score, total) VALUES (?, ?, ?, ?)",
+            (current_user["id"], request.topic, request.score, request.total)
+        )
+        conn.commit()
+        conn.close()
+        return {"message": "Quiz result saved", "score": request.score, "total": request.total}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save quiz result: {str(e)}")
+
+
+# ─── Teacher / Student Models ────────────────────────────────────────────────
+
+class ClassCreate(BaseModel):
+    name: str
+
+class BatchCreate(BaseModel):
+    name: str
+
+class AssignStudentRequest(BaseModel):
+    student_email: str
+
+class AssignTopicRequest(BaseModel):
+    topic: str
+
+# ─── Teacher Endpoints ────────────────────────────────────────────────────────
+
+@app.post("/teacher/classes")
+async def create_class(body: ClassCreate, current_user: dict = Depends(require_teacher)):
+    """Create a new class."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO classes (teacher_id, name) VALUES (?, ?)",
+        (current_user["id"], body.name)
+    )
+    class_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": class_id, "name": body.name, "teacher_id": current_user["id"]}
+
+@app.get("/teacher/classes")
+async def list_classes(current_user: dict = Depends(require_teacher)):
+    """List all classes owned by the current teacher."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.name, c.created_at, COUNT(b.id) as batch_count
+        FROM classes c
+        LEFT JOIN batches b ON b.class_id = c.id
+        WHERE c.teacher_id = ?
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+    """, (current_user["id"],))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r[0], "name": r[1], "created_at": r[2], "batch_count": r[3]} for r in rows]
+
+@app.post("/teacher/classes/{class_id}/batches")
+async def create_batch(class_id: int, body: BatchCreate, current_user: dict = Depends(require_teacher)):
+    """Create a new batch within a class."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", (class_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Class not found")
+    cursor.execute("INSERT INTO batches (class_id, name) VALUES (?, ?)", (class_id, body.name))
+    batch_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": batch_id, "name": body.name, "class_id": class_id}
+
+@app.get("/teacher/classes/{class_id}/batches")
+async def list_batches(class_id: int, current_user: dict = Depends(require_teacher)):
+    """List all batches for a class."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", (class_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Class not found")
+    cursor.execute("""
+        SELECT b.id, b.name, b.created_at,
+               COUNT(DISTINCT bs.student_id) as student_count,
+               COUNT(DISTINCT bt.id) as topic_count
+        FROM batches b
+        LEFT JOIN batch_students bs ON bs.batch_id = b.id
+        LEFT JOIN batch_topics bt ON bt.batch_id = b.id
+        WHERE b.class_id = ?
+        GROUP BY b.id
+    """, (class_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r[0], "name": r[1], "created_at": r[2], "student_count": r[3], "topic_count": r[4]} for r in rows]
+
+@app.post("/teacher/batches/{batch_id}/students")
+async def assign_student(batch_id: int, body: AssignStudentRequest, current_user: dict = Depends(require_teacher)):
+    """Assign a student to a batch by email."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # Verify teacher owns this batch
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    # Find student
+    cursor.execute("SELECT id, email FROM users WHERE email = ? AND role = 'student'", (body.student_email,))
+    student = cursor.fetchone()
+    if not student:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student not found with that email")
+    try:
+        cursor.execute("INSERT INTO batch_students (batch_id, student_id) VALUES (?, ?)", (batch_id, student[0]))
+        conn.commit()
+    except Exception:
+        pass  # Already assigned — ignore duplicate
+    conn.close()
+    return {"message": "Student assigned", "student_id": student[0], "student_email": student[1]}
+
+@app.delete("/teacher/batches/{batch_id}/students/{student_id}")
+async def remove_student(batch_id: int, student_id: int, current_user: dict = Depends(require_teacher)):
+    """Remove a student from a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    cursor.execute("DELETE FROM batch_students WHERE batch_id = ? AND student_id = ?", (batch_id, student_id))
+    conn.commit()
+    conn.close()
+    return {"message": "Student removed"}
+
+@app.get("/teacher/batches/{batch_id}/students")
+async def list_batch_students(batch_id: int, current_user: dict = Depends(require_teacher)):
+    """List all students in a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    cursor.execute("""
+        SELECT u.id, u.email, u.name
+        FROM batch_students bs
+        JOIN users u ON u.id = bs.student_id
+        WHERE bs.batch_id = ?
+        ORDER BY u.name
+    """, (batch_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
+
+@app.post("/teacher/batches/{batch_id}/topics")
+async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_teacher)):
+    """Assign a topic to a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    try:
+        cursor.execute("INSERT INTO batch_topics (batch_id, topic) VALUES (?, ?)", (batch_id, body.topic))
+        conn.commit()
+    except Exception:
+        pass  # Already assigned — ignore duplicate
+    conn.close()
+    return {"message": "Topic assigned", "batch_id": batch_id, "topic": body.topic}
+
+@app.delete("/teacher/batches/{batch_id}/topics/{topic}")
+async def remove_topic(batch_id: int, topic: str, current_user: dict = Depends(require_teacher)):
+    """Remove a topic from a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    cursor.execute("DELETE FROM batch_topics WHERE batch_id = ? AND topic = ?", (batch_id, topic))
+    conn.commit()
+    conn.close()
+    return {"message": "Topic removed"}
+
+@app.get("/teacher/batches/{batch_id}/topics")
+async def list_batch_topics(batch_id: int, current_user: dict = Depends(require_teacher)):
+    """List all topics assigned to a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    cursor.execute("SELECT topic, assigned_at FROM batch_topics WHERE batch_id = ?", (batch_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"topic": r[0], "assigned_at": r[1]} for r in rows]
+
+@app.get("/teacher/batches/{batch_id}/progress")
+async def get_batch_progress(batch_id: int, current_user: dict = Depends(require_teacher)):
+    """Get student × topic completion grid for a batch."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id FROM batches b
+        JOIN classes c ON c.id = b.class_id
+        WHERE b.id = ? AND c.teacher_id = ?
+    """, (batch_id, current_user["id"]))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    # Get students
+    cursor.execute("""
+        SELECT u.id, u.email, u.name FROM batch_students bs
+        JOIN users u ON u.id = bs.student_id WHERE bs.batch_id = ?
+    """, (batch_id,))
+    students = cursor.fetchall()
+    # Get assigned topics
+    cursor.execute("SELECT topic FROM batch_topics WHERE batch_id = ?", (batch_id,))
+    topics = [r[0] for r in cursor.fetchall()]
+    # Build completion grid with quiz scores
+    result = []
+    for s in students:
+        completed = []
+        for topic in topics:
+            cursor.execute("""
+                SELECT COUNT(*) FROM user_progress
+                WHERE user_id = ? AND topic = ?
+            """, (s[0], topic))
+            count = cursor.fetchone()[0]
+
+            cursor.execute("""
+                SELECT score, total FROM quiz_results
+                WHERE user_id = ? AND topic = ?
+                ORDER BY score DESC
+                LIMIT 1
+            """, (s[0], topic))
+            quiz_row = cursor.fetchone()
+
+            completed.append({
+                "topic": topic,
+                "completed": count > 0,
+                "quiz_score": quiz_row[0] if quiz_row else None,
+                "quiz_total": quiz_row[1] if quiz_row else None
+            })
+        result.append({"student_id": s[0], "email": s[1], "name": s[2], "topics": completed})
+    conn.close()
+    return {"students": result, "topics": topics}
+
+# ─── Student Endpoints ────────────────────────────────────────────────────────
+
+@app.get("/student/assignments")
+async def get_student_assignments(current_user: dict = Depends(require_student)):
+    """Get all topics assigned to this student across all their batches."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT bt.topic
+        FROM batch_topics bt
+        JOIN batch_students bs ON bs.batch_id = bt.batch_id
+        WHERE bs.student_id = ?
+        ORDER BY bt.topic
+    """, (current_user["id"],))
+    rows = cursor.fetchall()
+    conn.close()
+    return {"topics": [r[0] for r in rows]}
 
 if __name__ == "__main__":
     import uvicorn
