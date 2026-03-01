@@ -97,7 +97,7 @@ export default function StudentDashboard() {
               {topics.map((topic, index) => (
                 <button
                   key={topic}
-                  onClick={() => router.push(`/?topic=${encodeURIComponent(topic)}`)}
+                  onClick={() => router.push(`/learn/${encodeURIComponent(topic)}`)}
                   className={`bg-gradient-to-br ${topicColors[index % topicColors.length]} text-white rounded-xl p-6 text-center shadow-md hover:shadow-lg hover:scale-105 transition-all duration-200`}
                 >
                   <div className="text-4xl mb-2">{getEmoji(topic)}</div>
