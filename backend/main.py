@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends
+import asyncio
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -511,7 +512,7 @@ def is_topic_appropriate(topic: str) -> bool:
 
 
 @app.post("/generate-content", response_model=ContentResponse)
-async def generate_content(request: ContentRequest, authorization: HTTPAuthorizationCredentials = None):
+async def generate_content(request: ContentRequest, authorization: Optional[str] = Header(None)):
     """Generate educational content for a given topic."""
     if not os.getenv("GEMINI_API_KEY"):
         raise HTTPException(status_code=500, detail="Gemini API key not configured")
@@ -554,9 +555,10 @@ async def generate_content(request: ContentRequest, authorization: HTTPAuthoriza
             )
 
         # Record progress if user is logged in
-        if authorization:
+        if authorization and authorization.startswith("Bearer "):
             try:
-                payload = verify_jwt_token(authorization.credentials)
+                token = authorization[len("Bearer "):]
+                payload = verify_jwt_token(token)
                 user_id = payload["user_id"]
                 await record_user_progress(
                     user_id,
@@ -660,7 +662,11 @@ Write EXACTLY {guidelines['target_words']} words with {guidelines['paragraphs']}
     response = gemini_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=f"{system_prompt}\n\n{content_prompt}",
-        config=types.GenerateContentConfig(max_output_tokens=3000, temperature=0.7)
+        config=types.GenerateContentConfig(
+            max_output_tokens=8000,
+            temperature=0.7,
+            thinking_config=types.ThinkingConfig(thinking_budget=0)
+        )
     )
 
     return response.text.strip()
@@ -694,7 +700,11 @@ Requirements:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.3)
+            config=types.GenerateContentConfig(
+                max_output_tokens=2000,
+                temperature=0.3,
+                thinking_config=types.ThinkingConfig(thinking_budget=0)
+            )
         )
 
         text = response.text.strip()
@@ -855,7 +865,7 @@ async def get_unsplash_images(topic: str, count: int = 3) -> list:
     return generic_images[:count]
 
 @app.post("/generate-audio")
-async def generate_content_audio(request: AudioRequest, authorization: HTTPAuthorizationCredentials = None):
+async def generate_content_audio(request: AudioRequest, authorization: Optional[str] = Header(None)):
     """Generate or retrieve cached audio for content."""
     try:
         skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
@@ -873,9 +883,10 @@ async def generate_content_audio(request: AudioRequest, authorization: HTTPAutho
 
         cached_audio_file = get_cached_audio(request.topic, skill_level)
 
-        if authorization:
+        if authorization and authorization.startswith("Bearer "):
             try:
-                payload = verify_jwt_token(authorization.credentials)
+                token = authorization[len("Bearer "):]
+                payload = verify_jwt_token(token)
                 user_id = payload["user_id"]
                 await record_user_progress(
                     user_id,
@@ -1274,9 +1285,26 @@ async def list_batch_students(batch_id: int, current_user: dict = Depends(requir
     conn.close()
     return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
 
+async def prefetch_content(topic: str):
+    """Background task: pre-generate and cache content for a topic if not already cached."""
+    try:
+        cached = get_cached_content(topic, "Explorer")
+        if cached:
+            print(f"✅ Content already cached for '{topic}' — skipping pre-generation")
+            return
+        print(f"🔄 Pre-generating content for '{topic}'...")
+        content = await generate_topic_content(topic, "Explorer")
+        fk_score = textstat.flesch_reading_ease(content)
+        word_count = len(content.split())
+        cache_content(topic, "Explorer", content, word_count, fk_score)
+        print(f"✅ Pre-generation complete for '{topic}' ({word_count} words)")
+    except Exception as e:
+        print(f"⚠️ Pre-generation failed for '{topic}': {e}")
+
+
 @app.post("/teacher/batches/{batch_id}/topics")
 async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_teacher)):
-    """Assign a topic to a batch."""
+    """Assign a topic to a batch and pre-generate its content in the background."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -1293,6 +1321,10 @@ async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: di
     except Exception:
         pass  # Already assigned — ignore duplicate
     conn.close()
+
+    # Fire-and-forget: pre-generate content so students get instant load
+    asyncio.create_task(prefetch_content(body.topic))
+
     return {"message": "Topic assigned", "batch_id": batch_id, "topic": body.topic}
 
 @app.delete("/teacher/batches/{batch_id}/topics/{topic}")
@@ -1399,6 +1431,76 @@ async def get_student_assignments(current_user: dict = Depends(require_student))
     rows = cursor.fetchall()
     conn.close()
     return {"topics": [r[0] for r in rows]}
+
+
+@app.get("/student/progress")
+async def get_student_progress(current_user: dict = Depends(require_student)):
+    """Get the student's progress: completion status and quiz scores for all assigned topics,
+    plus full chronological quiz history."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Assigned topics
+    cursor.execute("""
+        SELECT DISTINCT bt.topic
+        FROM batch_topics bt
+        JOIN batch_students bs ON bs.batch_id = bt.batch_id
+        WHERE bs.student_id = ?
+        ORDER BY bt.topic
+    """, (current_user["id"],))
+    assigned_topics = [row[0] for row in cursor.fetchall()]
+
+    # Completed topics (any content viewed = completed)
+    cursor.execute("""
+        SELECT DISTINCT LOWER(topic) FROM user_progress WHERE user_id = ?
+    """, (current_user["id"],))
+    completed_set = {row[0] for row in cursor.fetchall()}
+
+    # Best quiz score per topic
+    cursor.execute("""
+        SELECT LOWER(topic), MAX(score), total
+        FROM quiz_results
+        WHERE user_id = ?
+        GROUP BY LOWER(topic)
+    """, (current_user["id"],))
+    quiz_best = {row[0]: {"score": row[1], "total": row[2]} for row in cursor.fetchall()}
+
+    # Full quiz history (newest first)
+    cursor.execute("""
+        SELECT topic, score, total, taken_at
+        FROM quiz_results
+        WHERE user_id = ?
+        ORDER BY taken_at DESC
+    """, (current_user["id"],))
+    quiz_history = [
+        {"topic": row[0], "score": row[1], "total": row[2], "taken_at": row[3]}
+        for row in cursor.fetchall()
+    ]
+
+    conn.close()
+
+    # Build per-topic progress
+    progress = []
+    for topic in assigned_topics:
+        q = quiz_best.get(topic.lower())
+        progress.append({
+            "topic": topic,
+            "completed": topic.lower() in completed_set,
+            "quiz_score": q["score"] if q else None,
+            "quiz_total": q["total"] if q else None,
+        })
+
+    total_completed = sum(1 for p in progress if p["completed"])
+    total_quizzes = len(quiz_history)
+
+    return {
+        "progress": progress,
+        "quiz_history": quiz_history,
+        "total_assigned": len(assigned_topics),
+        "total_completed": total_completed,
+        "total_quizzes": total_quizzes,
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

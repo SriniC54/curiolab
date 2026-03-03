@@ -249,7 +249,7 @@ export default function LearnPage() {
                       <h2 className="text-2xl lg:text-3xl font-black text-gray-900 capitalize mb-3">
                         {topic}
                       </h2>
-                      <AudioPlayer topic={topic} gradeLevel={4} />
+                      <AudioPlayer topic={topic} content={content.content} />
                     </div>
 
                     <div className="space-y-6">
