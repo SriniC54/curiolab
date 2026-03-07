@@ -54,6 +54,17 @@ dist/
 build/
 
 # Cache directories (should not be committed)
+content_cache/
+audio_cache/
 backend/content_cache/
 backend/audio_cache/
+
+# Database
+*.db
 backend/*.db
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Backend test/scratch scripts
+backend/test_*.py
