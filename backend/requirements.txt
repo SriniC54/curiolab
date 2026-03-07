@@ -7,3 +7,5 @@ requests
 bcrypt
 PyJWT
 email-validator
+google-genai
+httpx

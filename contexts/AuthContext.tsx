@@ -5,16 +5,18 @@ interface User {
   email: string
   name?: string
   created_at: string
+  role: 'teacher' | 'student'
 }
 
 interface AuthContextType {
   user: User | null
   token: string | null
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, name?: string) => Promise<void>
+  register: (email: string, password: string, name?: string, role?: string) => Promise<void>
   logout: () => void
   isAuthenticated: boolean
   isLoading: boolean
+  role: 'teacher' | 'student' | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -98,14 +100,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }
 
-  const register = async (email: string, password: string, name?: string) => {
+  const register = async (email: string, password: string, name?: string, role: string = 'student') => {
     try {
       const response = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, role }),
       })
 
       if (!response.ok) {
@@ -136,6 +138,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     isAuthenticated: !!user,
     isLoading,
+    role: user?.role ?? null,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

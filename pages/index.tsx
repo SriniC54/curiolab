@@ -7,18 +7,18 @@ import { UserProfile } from '../components/UserProfile'
 import analytics from '../lib/analytics'
 
 const topicSuggestions = [
-  { name: 'Dinosaurs', emoji: '🦕', color: 'from-green-400 to-emerald-500' },
-  { name: 'Space', emoji: '🚀', color: 'from-purple-400 to-indigo-500' },
-  { name: 'Ocean', emoji: '🌊', color: 'from-blue-400 to-cyan-500' },
-  { name: 'Pirates', emoji: '🏴‍☠️', color: 'from-red-400 to-orange-500' },
-  { name: 'Robots', emoji: '🤖', color: 'from-gray-400 to-slate-500' },
-  { name: 'Dragons', emoji: '🐉', color: 'from-pink-400 to-purple-500' },
-  { name: 'Volcanoes', emoji: '🌋', color: 'from-orange-400 to-red-500' },
-  { name: 'Castles', emoji: '🏰', color: 'from-blue-400 to-purple-500' },
-  { name: 'Butterflies', emoji: '🦋', color: 'from-yellow-400 to-pink-500' },
-  { name: 'Music', emoji: '🎵', color: 'from-indigo-400 to-blue-500' },
-  { name: 'Food', emoji: '🍎', color: 'from-red-400 to-yellow-500' },
-  { name: 'Weather', emoji: '⛈️', color: 'from-gray-400 to-blue-500' },
+  { name: 'Dinosaurs', emoji: '🦕', color: 'from-emerald-500 to-teal-600' },
+  { name: 'Space', emoji: '🚀', color: 'from-violet-600 to-purple-700' },
+  { name: 'Ocean', emoji: '🌊', color: 'from-sky-500 to-blue-600' },
+  { name: 'Pirates', emoji: '🏴‍☠️', color: 'from-rose-500 to-red-700' },
+  { name: 'Robots', emoji: '🤖', color: 'from-slate-600 to-gray-700' },
+  { name: 'Dragons', emoji: '🐉', color: 'from-fuchsia-500 to-pink-600' },
+  { name: 'Volcanoes', emoji: '🌋', color: 'from-orange-500 to-red-600' },
+  { name: 'Castles', emoji: '🏰', color: 'from-blue-500 to-indigo-600' },
+  { name: 'Butterflies', emoji: '🦋', color: 'from-yellow-400 to-orange-500' },
+  { name: 'Music', emoji: '🎵', color: 'from-indigo-500 to-violet-600' },
+  { name: 'Food', emoji: '🍎', color: 'from-red-400 to-amber-500' },
+  { name: 'Weather', emoji: '⛈️', color: 'from-cyan-500 to-sky-600' },
 ]
 
 export default function Home() {
@@ -49,28 +49,32 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>🦉 CurioLab — Laboratory of Curiosity for Kids!</title>
-        <meta name="description" content="Interactive learning adventures for elementary students" />
+        <title>🦉 CurioLab — Curiosity starts here!</title>
+        <meta name="description" content="Interactive learning adventures for kids" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-100 via-cyan-100 to-green-100">
+      <div className="min-h-screen bg-[#f8f7ff]">
 
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-white/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Hero gradient section */}
+        <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700">
+
+          {/* Nav */}
+          <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
-              <h1 className="text-xl font-bold text-gray-900">🦉 CurioLab</h1>
-              <div className="flex items-center space-x-4">
+              <span className="text-xl font-black text-white">🦉 CurioLab</span>
+              <div className="flex items-center space-x-3">
                 {isLoading ? (
-                  <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                 ) : isAuthenticated ? (
                   <div className="flex items-center space-x-3">
-                    <span className="text-sm text-gray-700">Hi, {user?.name || user?.email}!</span>
+                    <span className="text-sm text-white/80 hidden sm:block">
+                      Hi, {user?.name || user?.email}!
+                    </span>
                     {role === 'teacher' ? (
                       <a
                         href="/teacher-dashboard"
-                        className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
+                        className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
                       >
                         Teacher Dashboard
                       </a>
@@ -78,13 +82,13 @@ export default function Home() {
                       <>
                         <a
                           href="/student-dashboard"
-                          className="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
+                          className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
                         >
                           My Assignments
                         </a>
                         <button
                           onClick={() => setShowProfile(true)}
-                          className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                          className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
                         >
                           Profile
                         </button>
@@ -92,7 +96,7 @@ export default function Home() {
                     )}
                     <button
                       onClick={logout}
-                      className="px-3 py-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                      className="px-3 py-1 text-sm text-white/60 hover:text-white transition-colors"
                     >
                       Sign out
                     </button>
@@ -101,13 +105,13 @@ export default function Home() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => { setAuthMode('login'); setShowAuthModal(true) }}
-                      className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      className="px-4 py-2 text-sm text-white/80 hover:text-white font-semibold transition-colors"
                     >
                       Sign In
                     </button>
                     <button
                       onClick={() => { setAuthMode('register'); setShowAuthModal(true) }}
-                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="px-4 py-2 text-sm bg-white text-indigo-700 rounded-lg hover:bg-white/90 transition-colors font-bold"
                     >
                       Sign Up
                     </button>
@@ -115,21 +119,81 @@ export default function Home() {
                 )}
               </div>
             </div>
+          </nav>
+
+          {/* Hero text */}
+          <div className="text-center pt-6 pb-28 px-4">
+            <div className="text-7xl sm:text-8xl inline-block animate-float">🦉</div>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white mt-5 leading-tight">
+              Curiosity starts here
+            </h2>
+            <p className="text-indigo-200 text-lg sm:text-xl mt-4 max-w-lg mx-auto">
+              Explore any topic. Learn something amazing every day.
+            </p>
           </div>
-        </header>
+
+        </div>
+
+        {/* Search card — overlaps hero with negative margin */}
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 -mt-16 relative z-10 pb-16">
+          <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+
+            {/* Search */}
+            <div className="flex gap-3 mb-6">
+              <input
+                type="text"
+                value={customTopic}
+                onChange={e => setCustomTopic(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handleCustomTopicSubmit()}
+                placeholder="Type any topic — Black Holes, Ancient Egypt, Pizza..."
+                className="flex-1 px-4 py-3 text-base sm:text-lg rounded-xl border-2 border-gray-200 focus:border-indigo-400 focus:outline-none text-gray-800 bg-gray-50 font-medium"
+                autoFocus
+              />
+              <button
+                onClick={handleCustomTopicSubmit}
+                disabled={customTopic.trim().length < 2}
+                className="px-5 py-3 bg-indigo-600 text-white font-bold text-lg rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Go →
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex-1 h-px bg-gray-100" />
+              <span className="text-sm text-gray-400 font-semibold">or pick a topic</span>
+              <div className="flex-1 h-px bg-gray-100" />
+            </div>
+
+            {/* Topic grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {topicSuggestions.map((topic, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleTopicSelection(topic.name)}
+                  className={`p-5 rounded-2xl transition-all duration-150 hover:scale-105 active:scale-95 bg-gradient-to-br ${topic.color} text-white shadow-md hover:shadow-xl touch-manipulation text-left`}
+                >
+                  <div className="text-4xl mb-2">{topic.emoji}</div>
+                  <div className="text-sm font-extrabold leading-tight">{topic.name}</div>
+                </button>
+              ))}
+            </div>
+
+          </div>
+        </div>
 
         <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} defaultMode={authMode} />
 
         {/* Profile modal */}
         {showProfile && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-4">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">My Learning Profile</h2>
                   <button
                     onClick={() => setShowProfile(false)}
-                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                    className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
                   >
                     ×
                   </button>
@@ -140,58 +204,6 @@ export default function Home() {
           </div>
         )}
 
-        <main className="container mx-auto px-4 py-8">
-          <div className="max-w-3xl mx-auto">
-
-            <div className="text-center mb-8">
-              <p className="text-2xl font-bold text-gray-700">What do you want to learn about today?</p>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              {/* Search */}
-              <div className="flex gap-3 mb-6">
-                <input
-                  type="text"
-                  value={customTopic}
-                  onChange={e => setCustomTopic(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleCustomTopicSubmit()}
-                  placeholder="Type any topic — Dinosaurs, Black Holes, Pizza..."
-                  className="flex-1 px-4 py-3 text-lg rounded-xl border-2 border-gray-200 focus:border-blue-400 focus:outline-none text-gray-800 bg-gray-50"
-                  autoFocus
-                />
-                <button
-                  onClick={handleCustomTopicSubmit}
-                  disabled={customTopic.trim().length < 2}
-                  className="px-5 py-3 bg-blue-600 text-white font-bold text-lg rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Go →
-                </button>
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 mb-5">
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-sm text-gray-400">or pick one</span>
-                <div className="flex-1 h-px bg-gray-100" />
-              </div>
-
-              {/* Topic grid */}
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 lg:gap-3">
-                {topicSuggestions.map((topic, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleTopicSelection(topic.name)}
-                    className={`p-3 rounded-xl transition-all duration-150 hover:scale-105 active:scale-95 bg-gradient-to-br ${topic.color} text-white shadow-sm hover:shadow-md touch-manipulation`}
-                  >
-                    <div className="text-2xl mb-1">{topic.emoji}</div>
-                    <div className="text-sm font-bold leading-tight">{topic.name}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-          </div>
-        </main>
       </div>
     </>
   )

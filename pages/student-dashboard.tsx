@@ -89,8 +89,8 @@ export default function StudentDashboard() {
 
   if (isLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-        <div className="w-8 h-8 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f7ff]">
+        <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
       </div>
     )
   }
@@ -101,17 +101,17 @@ export default function StudentDashboard() {
   return (
     <>
       <Head><title>My Learning — CurioLab</title></Head>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+      <div className="min-h-screen bg-[#f8f7ff]">
 
         {/* Header */}
-        <header className="bg-white shadow-sm">
+        <header className="bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
+            <div className="flex justify-between items-center h-14">
               <div className="flex items-center space-x-3">
-                <a href="/" className="text-xl font-bold text-gray-900">🦉 CurioLab</a>
-                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">Student</span>
+                <a href="/" className="text-lg font-black text-white">🦉 CurioLab</a>
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-semibold">Student</span>
               </div>
-              <span className="text-sm text-gray-600">Hi, {user?.name || user?.email}!</span>
+              <span className="text-sm text-white/80">Hi, {user?.name || user?.email}!</span>
             </div>
           </div>
         </header>
@@ -122,16 +122,16 @@ export default function StudentDashboard() {
           {progress && progress.total_assigned > 0 && (
             <div className="grid grid-cols-3 gap-4 mb-8">
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center">
-                <p className="text-3xl font-black text-gray-900">{progress.total_assigned}</p>
-                <p className="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">Topics assigned</p>
+                <p className="text-3xl font-black text-indigo-600">{progress.total_assigned}</p>
+                <p className="text-xs text-gray-500 mt-1 font-semibold uppercase tracking-wide">Assigned</p>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center">
                 <p className="text-3xl font-black text-green-600">{progress.total_completed}</p>
-                <p className="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">Completed</p>
+                <p className="text-xs text-gray-500 mt-1 font-semibold uppercase tracking-wide">Completed</p>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center">
-                <p className="text-3xl font-black text-indigo-600">{progress.total_quizzes}</p>
-                <p className="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">Quizzes taken</p>
+                <p className="text-3xl font-black text-purple-600">{progress.total_quizzes}</p>
+                <p className="text-xs text-gray-500 mt-1 font-semibold uppercase tracking-wide">Quizzes</p>
               </div>
             </div>
           )}
@@ -161,8 +161,8 @@ export default function StudentDashboard() {
             <>
               {topics.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-xl shadow-sm">
-                  <div className="text-5xl mb-4">📭</div>
-                  <h2 className="text-xl font-semibold text-gray-700 mb-2">No topics assigned yet</h2>
+                  <div className="text-6xl mb-4 animate-float inline-block">🦉</div>
+                  <h2 className="text-xl font-bold text-gray-700 mb-2">No topics assigned yet</h2>
                   <p className="text-gray-500">Your teacher hasn't assigned any topics yet. Check back soon!</p>
                 </div>
               ) : (

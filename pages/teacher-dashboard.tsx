@@ -36,7 +36,7 @@ interface StudentProgress {
 }
 
 export default function TeacherDashboard() {
-  const { user, token, isAuthenticated, isLoading, role } = useAuth()
+  const { user, token, isAuthenticated, isLoading, role, logout } = useAuth()
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [classes, setClasses] = useState<ClassItem[]>([])
@@ -223,7 +223,15 @@ export default function TeacherDashboard() {
                 <a href="/" className="text-xl font-bold text-gray-900">🦉 CurioLab</a>
                 <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">Teacher</span>
               </div>
-              <span className="text-sm text-gray-600">Hi, {user?.name || user?.email}!</span>
+              <div className="flex items-center space-x-3">
+                <span className="text-sm text-gray-600">Hi, {user?.name || user?.email}!</span>
+                <button
+                  onClick={logout}
+                  className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           </div>
         </header>

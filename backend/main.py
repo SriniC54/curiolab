@@ -12,6 +12,7 @@ from google.genai import types
 import textstat
 import json
 import requests
+import httpx
 import random
 import hashlib
 from pathlib import Path
@@ -316,7 +317,7 @@ def get_cached_content(topic: str, skill_level: str) -> dict | None:
     print(f"💭 Cache MISS for {topic}-{skill_level}")
     return None
 
-def cache_content(topic: str, skill_level: str, content: str, word_count: int, readability_score: float) -> None:
+def cache_content(topic: str, skill_level: str, content: str, word_count: int, readability_score: float, sections: list = None) -> None:
     """Cache generated content for future use."""
     cache_key = get_cache_key(topic, skill_level)
     cache_file = CACHE_DIR / f"{cache_key}.json"
@@ -328,6 +329,8 @@ def cache_content(topic: str, skill_level: str, content: str, word_count: int, r
         "word_count": word_count,
         "readability_score": readability_score,
     }
+    if sections is not None:
+        cache_data["sections"] = sections
 
     try:
         with open(cache_file, 'w', encoding='utf-8') as f:
@@ -415,6 +418,7 @@ class ContentResponse(BaseModel):
     readability_score: float
     word_count: int
     images: list
+    sections: list  # [{heading, body, image_url, image_alt, photographer}]
 
 class QuizRequest(BaseModel):
     topic: str
@@ -531,27 +535,41 @@ async def generate_content(request: ContentRequest, authorization: Optional[str]
 
         if cached_content:
             images = await get_unsplash_images(request.topic, 3)
+            # If sections missing from old cache, generate them now
+            sections = cached_content.get("sections")
+            if not sections:
+                print(f"🔄 Generating missing sections for cached '{request.topic}'")
+                sections = await parse_and_enrich_sections(request.topic, cached_content["content"])
+                # Update cache file with sections
+                cache_content(
+                    cached_content["topic"], cached_content["skill_level"],
+                    cached_content["content"], cached_content["word_count"],
+                    cached_content["readability_score"], sections
+                )
             response = ContentResponse(
                 topic=cached_content["topic"],
                 skill_level=cached_content["skill_level"],
                 content=cached_content["content"],
                 readability_score=cached_content["readability_score"],
                 word_count=cached_content["word_count"],
-                images=images
+                images=images,
+                sections=sections
             )
         else:
             content = await generate_topic_content(request.topic, request.skill_level)
             images = await get_unsplash_images(request.topic, 3)
             fk_score = textstat.flesch_reading_ease(content)
             word_count = len(content.split())
-            cache_content(request.topic, request.skill_level, content, word_count, fk_score)
+            sections = await parse_and_enrich_sections(request.topic, content)
+            cache_content(request.topic, request.skill_level, content, word_count, fk_score, sections)
             response = ContentResponse(
                 topic=request.topic,
                 skill_level=request.skill_level,
                 content=content,
                 readability_score=fk_score,
                 word_count=word_count,
-                images=images
+                images=images,
+                sections=sections
             )
 
         # Record progress if user is logged in
@@ -864,6 +882,117 @@ async def get_unsplash_images(topic: str, count: int = 3) -> list:
     print(f"Using generic educational images for {topic_key}")
     return generic_images[:count]
 
+
+async def search_pexels_image(query: str) -> dict | None:
+    """Search Pexels for a landscape photo matching query. Returns image dict or None."""
+    api_key = os.getenv("PEXELS_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": api_key},
+                params={"query": query, "per_page": 3, "orientation": "landscape"}
+            )
+            data = r.json()
+        if data.get("photos"):
+            photo = data["photos"][0]
+            return {
+                "url": photo["src"]["large2x"],
+                "alt": photo.get("alt") or query,
+                "photographer": photo["photographer"]
+            }
+    except Exception as e:
+        print(f"⚠️ Pexels search error for '{query}': {e}")
+    return None
+
+
+async def parse_and_enrich_sections(topic: str, content: str) -> list:
+    """Parse content into sections and fetch a Pexels image for each."""
+    paragraphs = content.split('\n\n')
+    raw_sections = []
+    current_heading = ""
+    current_body_parts: list[str] = []
+
+    for para in paragraphs:
+        stripped = para.strip()
+        asterisk_match = re.match(r'^\*\*(.+?)\*\*', stripped)
+        emoji_match = re.match(
+            r'^([🔥🌿🍖💎🏰🐲📖✨🎉🌟⭐🎯🚀🌍🎨🔬📚🎭🎪🌺🦋🌈⚡🎁🏆🎵🎲🔍🏞️☀️🔆🌱]\s+[^\n]+)',
+            stripped
+        )
+        is_heading = asterisk_match or emoji_match
+
+        if is_heading:
+            if current_heading or current_body_parts:
+                raw_sections.append({
+                    "heading": current_heading,
+                    "body": '\n\n'.join(current_body_parts).strip()
+                })
+            if asterisk_match:
+                current_heading = asterisk_match.group(1)
+                remainder = stripped[len(asterisk_match.group(0)):].strip()
+                current_body_parts = [remainder] if remainder else []
+            else:
+                current_heading = emoji_match.group(1)
+                remainder = stripped[len(current_heading):].strip()
+                current_body_parts = [remainder] if remainder else []
+        else:
+            if stripped:
+                current_body_parts.append(stripped)
+
+    if current_heading or current_body_parts:
+        raw_sections.append({
+            "heading": current_heading,
+            "body": '\n\n'.join(current_body_parts).strip()
+        })
+
+    # Build Pexels queries and fetch images concurrently
+    def make_query(heading: str) -> str:
+        # Strip emojis and punctuation, keep meaningful words
+        clean = re.sub(r'[^\w\s]', ' ', heading)
+        clean = re.sub(r'\s+', ' ', clean).strip().lower()
+        words = [w for w in clean.split() if len(w) > 2][:4]
+        if words:
+            return ' '.join(words) + ' ' + topic.lower()
+        return topic.lower() + ' nature'
+
+    queries = [make_query(s["heading"]) for s in raw_sections]
+    # Limit to 7 API calls max
+    queries = queries[:7]
+    raw_sections = raw_sections[:7]
+
+    image_results = await asyncio.gather(
+        *[search_pexels_image(q) for q in queries],
+        return_exceptions=True
+    )
+
+    # Fallback image query
+    async def get_fallback():
+        return await search_pexels_image(f"{topic} nature landscape")
+
+    fallback = None
+
+    enriched = []
+    for i, section in enumerate(raw_sections):
+        img = image_results[i] if i < len(image_results) and isinstance(image_results[i], dict) else None
+        if img is None:
+            if fallback is None:
+                fallback = await get_fallback()
+            img = fallback or {"url": "", "alt": topic, "photographer": ""}
+        enriched.append({
+            "heading": section["heading"],
+            "body": section["body"],
+            "image_url": img["url"],
+            "image_alt": img["alt"],
+            "photographer": img["photographer"]
+        })
+
+    print(f"📸 Enriched {len(enriched)} sections with Pexels images for '{topic}'")
+    return enriched
+
+
 @app.post("/generate-audio")
 async def generate_content_audio(request: AudioRequest, authorization: Optional[str] = Header(None)):
     """Generate or retrieve cached audio for content."""
@@ -1099,6 +1228,40 @@ async def track_reading_time(request: TimeTrackingRequest, current_user: dict = 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to track time: {str(e)}")
 
+class TTSSectionRequest(BaseModel):
+    text: str
+
+@app.post("/tts-section")
+async def tts_section(request: TTSSectionRequest):
+    """Generate TTS for a single story section using OpenAI. Cached by content hash."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+
+    text = request.text.strip()[:4096]
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+
+    text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()[:16]
+    audio_file = AUDIO_CACHE_DIR / f"section_{text_hash}.mp3"
+
+    if not audio_file.exists():
+        try:
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="nova",
+                input=text,
+                speed=0.92
+            )
+            with open(audio_file, 'wb') as f:
+                for chunk in response.iter_bytes():
+                    f.write(chunk)
+            print(f"🎤 TTS section cached: section_{text_hash}.mp3")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+    return FileResponse(path=audio_file, media_type="audio/mpeg")
+
+
 @app.post("/generate-quiz")
 async def generate_quiz(request: QuizRequest):
     """Generate 5 MCQ quiz questions based on article content."""
@@ -1286,18 +1449,28 @@ async def list_batch_students(batch_id: int, current_user: dict = Depends(requir
     return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
 
 async def prefetch_content(topic: str):
-    """Background task: pre-generate and cache content for a topic if not already cached."""
+    """Background task: pre-generate and cache content + sections for a topic if not already cached."""
     try:
         cached = get_cached_content(topic, "Explorer")
         if cached:
-            print(f"✅ Content already cached for '{topic}' — skipping pre-generation")
+            # If sections already present, nothing to do
+            if cached.get("sections"):
+                print(f"✅ Content + sections already cached for '{topic}' — skipping pre-generation")
+                return
+            # Content cached but sections missing — enrich now
+            print(f"🔄 Fetching missing sections for cached '{topic}'...")
+            sections = await parse_and_enrich_sections(topic, cached["content"])
+            cache_content(cached["topic"], cached["skill_level"], cached["content"],
+                          cached["word_count"], cached["readability_score"], sections)
+            print(f"✅ Sections cached for '{topic}'")
             return
         print(f"🔄 Pre-generating content for '{topic}'...")
         content = await generate_topic_content(topic, "Explorer")
         fk_score = textstat.flesch_reading_ease(content)
         word_count = len(content.split())
-        cache_content(topic, "Explorer", content, word_count, fk_score)
-        print(f"✅ Pre-generation complete for '{topic}' ({word_count} words)")
+        sections = await parse_and_enrich_sections(topic, content)
+        cache_content(topic, "Explorer", content, word_count, fk_score, sections)
+        print(f"✅ Pre-generation complete for '{topic}' ({word_count} words, {len(sections)} sections)")
     except Exception as e:
         print(f"⚠️ Pre-generation failed for '{topic}': {e}")
 
