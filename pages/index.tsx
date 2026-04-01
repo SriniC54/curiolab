@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { AuthModal } from '../components/AuthModal'
 import { UserProfile } from '../components/UserProfile'
 import analytics from '../lib/analytics'
+import Footer from '../components/Footer'
 
 const topicSuggestions = [
   { name: 'Dinosaurs', emoji: '🦕', color: 'from-emerald-500 to-teal-600' },
@@ -181,6 +182,8 @@ export default function Home() {
 
           </div>
         </div>
+
+        <Footer />
 
         <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} defaultMode={authMode} />
 

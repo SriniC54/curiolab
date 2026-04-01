@@ -171,6 +171,18 @@ def init_database():
         )
     """)
 
+    # Feedback submissions
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT,
+            role TEXT,
+            message TEXT NOT NULL,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1673,6 +1685,32 @@ async def get_student_progress(current_user: dict = Depends(require_student)):
         "total_completed": total_completed,
         "total_quizzes": total_quizzes,
     }
+
+
+# ---------------------------------------------------------------------------
+# Feedback
+# ---------------------------------------------------------------------------
+
+class FeedbackSubmit(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    message: str
+
+@app.post("/feedback")
+async def submit_feedback(data: FeedbackSubmit):
+    """Save a feedback submission."""
+    if not data.message or not data.message.strip():
+        raise HTTPException(status_code=400, detail="Message is required")
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO feedback (name, email, role, message) VALUES (?, ?, ?, ?)",
+        (data.name, data.email, data.role, data.message.strip())
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 if __name__ == "__main__":

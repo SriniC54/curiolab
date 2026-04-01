@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useAuth } from '../contexts/AuthContext'
+import Footer from '../components/Footer'
 
 interface TopicProgress {
   topic: string
@@ -260,6 +261,7 @@ export default function StudentDashboard() {
 
         </div>
       </div>
+      <Footer />
     </>
   )
 }

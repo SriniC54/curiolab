@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import { useAuth } from '../contexts/AuthContext'
+import Footer from '../components/Footer'
 
 interface ClassItem {
   id: number
@@ -453,6 +454,7 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </div>
+      <Footer />
     </>
   )
 }
