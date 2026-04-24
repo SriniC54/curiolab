@@ -72,7 +72,7 @@ export default function Home() {
                     <span className="text-sm text-white/80 hidden sm:block">
                       Hi, {user?.name || user?.email}!
                     </span>
-                    {role === 'teacher' ? (
+                    {role === 'creator' ? (
                       <a
                         href="/teacher-dashboard"
                         className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"

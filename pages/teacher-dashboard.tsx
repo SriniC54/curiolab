@@ -58,13 +58,13 @@ export default function TeacherDashboard() {
 
   // Auth guard
   useEffect(() => {
-    if (!isLoading && (!isAuthenticated || role !== 'teacher')) {
+    if (!isLoading && (!isAuthenticated || role !== 'creator')) {
       window.location.href = '/'
     }
   }, [isLoading, isAuthenticated, role])
 
   useEffect(() => {
-    if (isAuthenticated && role === 'teacher') {
+    if (isAuthenticated && role === 'creator') {
       fetchClasses()
     }
   }, [isAuthenticated, role])

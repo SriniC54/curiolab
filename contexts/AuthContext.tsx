@@ -5,7 +5,7 @@ interface User {
   email: string
   name?: string
   created_at: string
-  role: 'teacher' | 'student'
+  role: 'creator' | 'student'
 }
 
 interface AuthContextType {
@@ -16,7 +16,7 @@ interface AuthContextType {
   logout: () => void
   isAuthenticated: boolean
   isLoading: boolean
-  role: 'teacher' | 'student' | null
+  role: 'creator' | 'student' | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)

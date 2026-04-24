@@ -16,7 +16,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
-  const [role, setRole] = useState<'student' | 'teacher'>('student')
+  const [role, setRole] = useState<'student' | 'creator'>('student')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   
@@ -90,14 +90,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRole('teacher')}
+                    onClick={() => setRole('creator')}
                     className={`flex-1 py-2 rounded-md border-2 text-sm font-medium transition-colors ${
-                      role === 'teacher'
+                      role === 'creator'
                         ? 'border-green-500 bg-green-50 text-green-700'
                         : 'border-gray-300 text-gray-600 hover:border-gray-400'
                     }`}
                   >
-                    Teacher
+                    Creator
                   </button>
                 </div>
               </div>

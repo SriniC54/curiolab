@@ -106,6 +106,10 @@ def init_database():
         except Exception:
             pass  # Column already exists
 
+    # Pivot migration: rename role 'teacher' -> 'creator'.
+    # Idempotent — second run is a no-op since no rows match the old value.
+    cursor.execute("UPDATE users SET role = 'creator' WHERE role = 'teacher'")
+
     # Institutions table (optional — independent teachers have no institution)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS institutions (
@@ -299,10 +303,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         "institution_id": user[5]
     }
 
-def require_teacher(current_user: dict = Depends(get_current_user)) -> dict:
-    """Dependency that requires the current user to be a teacher."""
-    if current_user["role"] != "teacher":
-        raise HTTPException(status_code=403, detail="Teacher access required")
+def require_creator(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency that requires the current user to be a creator."""
+    if current_user["role"] != "creator":
+        raise HTTPException(status_code=403, detail="Creator access required")
     return current_user
 
 def require_student(current_user: dict = Depends(get_current_user)) -> dict:
@@ -1149,8 +1153,8 @@ async def register_user(user_data: UserRegister):
             raise HTTPException(status_code=400, detail="Email already registered")
         
         # Validate role
-        if user_data.role not in ("teacher", "student"):
-            raise HTTPException(status_code=400, detail="role must be 'teacher' or 'student'")
+        if user_data.role not in ("creator", "student"):
+            raise HTTPException(status_code=400, detail="role must be 'creator' or 'student'")
 
         # Hash password and create user
         password_hash = hash_password(user_data.password)
@@ -1373,7 +1377,7 @@ class AssignTopicRequest(BaseModel):
 # ─── Teacher Endpoints ────────────────────────────────────────────────────────
 
 @app.post("/teacher/classes")
-async def create_class(body: ClassCreate, current_user: dict = Depends(require_teacher)):
+async def create_class(body: ClassCreate, current_user: dict = Depends(require_creator)):
     """Create a new class."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1387,7 +1391,7 @@ async def create_class(body: ClassCreate, current_user: dict = Depends(require_t
     return {"id": class_id, "name": body.name, "teacher_id": current_user["id"]}
 
 @app.get("/teacher/classes")
-async def list_classes(current_user: dict = Depends(require_teacher)):
+async def list_classes(current_user: dict = Depends(require_creator)):
     """List all classes owned by the current teacher."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1404,7 +1408,7 @@ async def list_classes(current_user: dict = Depends(require_teacher)):
     return [{"id": r[0], "name": r[1], "created_at": r[2], "batch_count": r[3]} for r in rows]
 
 @app.post("/teacher/classes/{class_id}/batches")
-async def create_batch(class_id: int, body: BatchCreate, current_user: dict = Depends(require_teacher)):
+async def create_batch(class_id: int, body: BatchCreate, current_user: dict = Depends(require_creator)):
     """Create a new batch within a class."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1419,7 +1423,7 @@ async def create_batch(class_id: int, body: BatchCreate, current_user: dict = De
     return {"id": batch_id, "name": body.name, "class_id": class_id}
 
 @app.get("/teacher/classes/{class_id}/batches")
-async def list_batches(class_id: int, current_user: dict = Depends(require_teacher)):
+async def list_batches(class_id: int, current_user: dict = Depends(require_creator)):
     """List all batches for a class."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1442,7 +1446,7 @@ async def list_batches(class_id: int, current_user: dict = Depends(require_teach
     return [{"id": r[0], "name": r[1], "created_at": r[2], "student_count": r[3], "topic_count": r[4]} for r in rows]
 
 @app.post("/teacher/batches/{batch_id}/students")
-async def assign_student(batch_id: int, body: AssignStudentRequest, current_user: dict = Depends(require_teacher)):
+async def assign_student(batch_id: int, body: AssignStudentRequest, current_user: dict = Depends(require_creator)):
     """Assign a student to a batch by email."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1470,7 +1474,7 @@ async def assign_student(batch_id: int, body: AssignStudentRequest, current_user
     return {"message": "Student assigned", "student_id": student[0], "student_email": student[1]}
 
 @app.delete("/teacher/batches/{batch_id}/students/{student_id}")
-async def remove_student(batch_id: int, student_id: int, current_user: dict = Depends(require_teacher)):
+async def remove_student(batch_id: int, student_id: int, current_user: dict = Depends(require_creator)):
     """Remove a student from a batch."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1488,7 +1492,7 @@ async def remove_student(batch_id: int, student_id: int, current_user: dict = De
     return {"message": "Student removed"}
 
 @app.get("/teacher/batches/{batch_id}/students")
-async def list_batch_students(batch_id: int, current_user: dict = Depends(require_teacher)):
+async def list_batch_students(batch_id: int, current_user: dict = Depends(require_creator)):
     """List all students in a batch."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1539,7 +1543,7 @@ async def prefetch_content(topic: str):
 
 
 @app.post("/teacher/batches/{batch_id}/topics")
-async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_teacher)):
+async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_creator)):
     """Assign a topic to a batch and pre-generate its content in the background."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1564,7 +1568,7 @@ async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: di
     return {"message": "Topic assigned", "batch_id": batch_id, "topic": body.topic}
 
 @app.delete("/teacher/batches/{batch_id}/topics/{topic}")
-async def remove_topic(batch_id: int, topic: str, current_user: dict = Depends(require_teacher)):
+async def remove_topic(batch_id: int, topic: str, current_user: dict = Depends(require_creator)):
     """Remove a topic from a batch."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1582,7 +1586,7 @@ async def remove_topic(batch_id: int, topic: str, current_user: dict = Depends(r
     return {"message": "Topic removed"}
 
 @app.get("/teacher/batches/{batch_id}/topics")
-async def list_batch_topics(batch_id: int, current_user: dict = Depends(require_teacher)):
+async def list_batch_topics(batch_id: int, current_user: dict = Depends(require_creator)):
     """List all topics assigned to a batch."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1600,7 +1604,7 @@ async def list_batch_topics(batch_id: int, current_user: dict = Depends(require_
     return [{"topic": r[0], "assigned_at": r[1]} for r in rows]
 
 @app.get("/teacher/batches/{batch_id}/progress")
-async def get_batch_progress(batch_id: int, current_user: dict = Depends(require_teacher)):
+async def get_batch_progress(batch_id: int, current_user: dict = Depends(require_creator)):
     """Get student × topic completion grid for a batch."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

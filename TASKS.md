@@ -24,11 +24,11 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 
 ## Phase 1 — Data model foundation
 
-- [ ] **#4 Add `content_items` table + migration** ⬜
-  New table: id, creator_id, topic, skill_level, draft_content (JSON), final_content (JSON), validator_feedback (text), iteration_count, status (`draft`/`validated`/`published`), visibility (`private`/`assigned`/`public`), timestamps. Idempotent migration on backend startup.
+- [x] **#4 Add `content_items` table + migration** ✅
+  New table: id, creator_id, topic, skill_level, draft_content (JSON), final_content (JSON), validator_feedback (text), iteration_count, status (`draft`/`validated`/`published`), visibility (`private`/`assigned`/`public`), timestamps, deleted_at (soft-delete). Indexes on `(creator_id, deleted_at)`, `status`, `visibility`. Idempotent migration in `init_database()`. Verified on a clean DB: re-runs safe, defaults apply, JSON round-trips, soft-delete filters correctly.
 
-- [ ] **#5 Rename role `teacher` → `creator`** ⬜
-  DB migration on `users.role`. Update backend role checks, JWT claims, frontend role-gating, UI copy.
+- [x] **#5 Rename role `teacher` → `creator`** ✅
+  Idempotent `UPDATE users SET role='creator' WHERE role='teacher'` added to `init_database()`. Backend: `require_teacher` → `require_creator` (function + 13 endpoint dependencies), validation tuple, error messages. Frontend: TS types in `AuthContext`, `AuthModal` (state + click handler + button label), role checks in `index.tsx`, `learn/[topic].tsx`, `teacher-dashboard.tsx`. Verified end-to-end: 'teacher' rows convert cleanly, idempotent on re-run, content_items table coexists. Cosmetic cleanup (route paths, column names, file rename, comments) tracked separately as task #21.
 
 - [ ] **#6 Link `batch_topics` to `content_item_id`** ⬜
   Add foreign key so assignments reference a specific generated content piece, not a regeneratable topic string.
