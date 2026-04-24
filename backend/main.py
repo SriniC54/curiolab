@@ -183,6 +183,57 @@ def init_database():
         )
     """)
 
+    # ---------------------------------------------------------------
+    # Pivot schema: creator-authored content with validator feedback.
+    # See PIVOT_PLAN.md for design context.
+    # ---------------------------------------------------------------
+
+    # content_items: a single piece of generated content owned by a creator.
+    #
+    # status values:    'draft' | 'validated' | 'published'
+    # visibility values: 'private' | 'assigned' | 'public'
+    #
+    # draft_content / final_content store the generator output as a JSON blob
+    # (TEXT column). final_content is set after the validator/revision loop.
+    # validator_feedback holds the single synthesized narrative summary shown
+    # to the creator (per-dimension breakdown is V2).
+    #
+    # deleted_at is a soft-delete tombstone — non-NULL means hidden from the
+    # creator's library and from assignment/publish flows.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS content_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER NOT NULL REFERENCES users(id),
+            topic TEXT NOT NULL,
+            skill_level TEXT NOT NULL,
+            draft_content TEXT,
+            final_content TEXT,
+            validator_feedback TEXT,
+            iteration_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft',
+            visibility TEXT NOT NULL DEFAULT 'private',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP
+        )
+    """)
+
+    # Indexes for common access patterns:
+    #  - creator's library view (filter by creator_id, exclude soft-deleted)
+    #  - status / visibility filters (admin moderation, future public browse)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_content_items_creator
+        ON content_items(creator_id, deleted_at)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_content_items_status
+        ON content_items(status)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_content_items_visibility
+        ON content_items(visibility)
+    """)
+
     conn.commit()
     conn.close()
 
