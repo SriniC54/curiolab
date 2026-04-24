@@ -5,6 +5,8 @@
 **Owner:** SriniC54
 **Archive branch:** `pre-pivot-archive` (rollback point)
 **Working branch:** `pivot/creator-flow`
+**Also published as Gist:** https://gist.github.com/SriniC54/39c097a6898f7fd93feb13fad18f0095
+**Task tracker:** see [`TASKS.md`](./TASKS.md)
 
 ---
 
