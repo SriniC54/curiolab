@@ -238,6 +238,31 @@ def init_database():
         ON content_items(visibility)
     """)
 
+    # Link batch_topics to a specific content_item.
+    #
+    # Pre-pivot, batch_topics held only a topic string and content was generated
+    # on-demand each time a student opened it. Post-pivot, every assignment
+    # references a specific reviewed-and-validated content_item.
+    #
+    # The column is nullable so legacy rows from the on-demand era don't
+    # explode the migration. New assignments (rewrite lands in task #15) will
+    # always populate it. The 'topic' column stays as a denormalized display
+    # label and is what the existing UNIQUE(batch_id, topic) constraint uses.
+    #
+    # Tightening to NOT NULL or UNIQUE(batch_id, content_item_id) requires a
+    # SQLite table rebuild and is deferred to followup task #21.
+    try:
+        cursor.execute(
+            "ALTER TABLE batch_topics ADD COLUMN content_item_id INTEGER REFERENCES content_items(id)"
+        )
+    except Exception:
+        pass  # Column already exists
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_batch_topics_content_item
+        ON batch_topics(content_item_id)
+    """)
+
     conn.commit()
     conn.close()
 

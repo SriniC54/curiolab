@@ -30,8 +30,8 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 - [x] **#5 Rename role `teacher` → `creator`** ✅
   Idempotent `UPDATE users SET role='creator' WHERE role='teacher'` added to `init_database()`. Backend: `require_teacher` → `require_creator` (function + 13 endpoint dependencies), validation tuple, error messages. Frontend: TS types in `AuthContext`, `AuthModal` (state + click handler + button label), role checks in `index.tsx`, `learn/[topic].tsx`, `teacher-dashboard.tsx`. Verified end-to-end: 'teacher' rows convert cleanly, idempotent on re-run, content_items table coexists. Cosmetic cleanup (route paths, column names, file rename, comments) tracked separately as task #21.
 
-- [ ] **#6 Link `batch_topics` to `content_item_id`** ⬜
-  Add foreign key so assignments reference a specific generated content piece, not a regeneratable topic string.
+- [x] **#6 Link `batch_topics` to `content_item_id`** ✅
+  Additive `ALTER TABLE batch_topics ADD COLUMN content_item_id INTEGER REFERENCES content_items(id)` wrapped in try/except for idempotency. Nullable so legacy rows survive untouched; new assignments (task #15) will populate it. Index `idx_batch_topics_content_item` for the JOIN path. Tightening to NOT NULL or `UNIQUE(batch_id, content_item_id)` requires a SQLite table rebuild — deferred to task #21. Verified on a fresh DB: legacy NULL rows preserved, linked rows JOIN cleanly to content_items, query plan uses the index, second migration run is a no-op.
 
 ## Phase 2 — Backend validator + generation loop
 
