@@ -959,6 +959,10 @@ No markdown, no commentary outside the JSON."""
         # Permissive default: if the validator itself fails, treat the draft
         # as acceptable. Better to ship a slightly imperfect draft than to
         # block a creator behind a flaky reviewer. Logged so we can investigate.
+        # The `_fallback: True` flag lets the orchestrator detect this and
+        # prefer the most recent substantive critique instead of surfacing
+        # the placeholder summary to the creator. Field is unused by anything
+        # else (UI, persistence) so it's safe to leave in the JSON blob.
         print(f"⚠️ Validator failed ({type(e).__name__}: {e}); treating draft as acceptable")
         return {
             "dimensions": {
@@ -967,6 +971,7 @@ No markdown, no commentary outside the JSON."""
             },
             "summary": "Validator review unavailable for this draft.",
             "needs_revision": False,
+            "_fallback": True,
         }
 
 
@@ -1094,6 +1099,163 @@ Now produce the revised draft."""
         # with actionable feedback rather than an error or placeholder.
         print(f"⚠️ Revision failed ({type(e).__name__}: {e}); returning original draft")
         return draft
+
+
+# Hard cap on revision passes inside the orchestrator. Two is enough to
+# fix most issues; beyond that, additional revisions tend to drift the
+# draft without improving the validator score. Tunable; not env-var-driven
+# for MVP since changing it is a meaningful UX decision.
+MAX_REVISIONS = 2
+
+
+async def orchestrate_content_creation(
+    creator_id: int,
+    topic: str,
+    skill_level: str,
+) -> dict:
+    """Run the generate -> validate -> (revise -> validate) loop and persist.
+
+    This is the single backend entrypoint the /create page hits via task #10's
+    endpoint. It owns the full creation cycle:
+      1. Generate the first draft (existing generator).
+      2. Validate it (#7).
+      3. If the validator flags concerns, revise (#8) and validate again.
+      4. Repeat step 3 up to MAX_REVISIONS times.
+      5. Persist a content_items row with the first draft, final draft, final
+         critique, and iteration_count. status='draft', visibility='private'.
+      6. Return the row id + creator-facing payload.
+
+    The first draft is preserved so we can debug "what did the validator
+    actually catch" later. Intermediate critiques are not persisted — the
+    final critique reflects the state of the draft the creator will see.
+
+    Sections, images, and quiz are intentionally NOT generated here. Those
+    are slow and asset-heavy (Unsplash fetches + extra Gemini calls); we
+    don't want to make the creator wait for assets they may regenerate
+    away. They get generated lazily when a student opens the assignment
+    (task #16).
+
+    Args:
+        creator_id: users.id of the authenticated creator.
+        topic: free-text topic the creator entered.
+        skill_level: One of "Beginner", "Explorer", "Expert".
+
+    Returns:
+        {
+          "content_item_id": int,
+          "content": str,            # final markdown
+          "summary": str,            # validator's conversational note
+          "iteration_count": int,    # 0, 1, or 2
+          "status": "draft",
+          "visibility": "private",
+        }
+
+    Raises:
+        Exception on Gemini failures during the *first* generate call (no
+        draft means nothing to show the creator). Validator and revision
+        failures are absorbed by their own permissive defaults (#7 and #8),
+        so the loop always reaches the persist step with *some* draft.
+        SQLite write failures are surfaced — silent persistence failure
+        would create a successful-looking generate that doesn't show up in
+        the library, which is worse than a clear error.
+    """
+
+    print(f"🚀 Orchestrator start: creator={creator_id}, topic={topic!r}, level={skill_level}")
+
+    # --- 1. Generate the first draft.
+    first_draft = await generate_topic_content(topic, skill_level)
+    draft = first_draft
+
+    # --- 2. First validation pass.
+    critique = await validate_content_draft(draft, topic, skill_level)
+    iteration_count = 0
+    _log_pass("initial", critique)
+
+    # Track the most recent SUBSTANTIVE critique (one that came back from
+    # a real Gemini call, not the validator's permissive fallback). If the
+    # final pass falls back due to a transient Gemini error, we prefer the
+    # last real review over the placeholder string — the creator should see
+    # actionable feedback whenever any pass succeeded.
+    last_substantive_critique = critique if not critique.get("_fallback") else None
+
+    # --- 3-4. Revise + revalidate up to MAX_REVISIONS times.
+    while critique.get("needs_revision") and iteration_count < MAX_REVISIONS:
+        iteration_count += 1
+        draft = await revise_content_draft(draft, critique, topic, skill_level)
+        critique = await validate_content_draft(draft, topic, skill_level)
+        _log_pass(f"revision_{iteration_count}", critique)
+        if not critique.get("_fallback"):
+            last_substantive_critique = critique
+
+    # If the final critique is a fallback but we have a real one from earlier,
+    # surface the substantive critique instead. The creator gets actionable
+    # editorial feedback rather than "Validator review unavailable."
+    if critique.get("_fallback") and last_substantive_critique is not None:
+        print("   [final] last validator pass fell back; using last substantive critique for display")
+        critique = last_substantive_critique
+
+    # --- 5. Persist. The first draft is stored separately from the final
+    # draft so we can compare them later for prompt tuning. Both are stored
+    # as plain markdown strings (the columns are TEXT, not JSON-typed).
+    # validator_feedback is the full final critique as a JSON blob.
+    final_content = draft
+    feedback_blob = json.dumps(critique)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO content_items (
+                creator_id, topic, skill_level,
+                draft_content, final_content, validator_feedback,
+                iteration_count, status, visibility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'private')
+            """,
+            (
+                creator_id,
+                topic,
+                skill_level,
+                first_draft,
+                final_content,
+                feedback_blob,
+                iteration_count,
+            ),
+        )
+        content_item_id = cursor.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    print(f"✅ Orchestrator done: content_item_id={content_item_id}, iterations={iteration_count}")
+
+    return {
+        "content_item_id": content_item_id,
+        "content": final_content,
+        "summary": critique.get("summary", ""),
+        "iteration_count": iteration_count,
+        "status": "draft",
+        "visibility": "private",
+    }
+
+
+def _log_pass(label: str, critique: dict) -> None:
+    """Cheap observability for the validator loop.
+
+    Prints which dimensions had concerns at this pass. Useful in the first
+    weeks of usage to confirm the loop is doing what we expect (e.g., is
+    the second revision actually clearing the issues, or just churning?).
+    Called only from the orchestrator; safe to remove or downgrade to a
+    proper logger later.
+    """
+    concerns = [
+        dim for dim, entry in critique.get("dimensions", {}).items()
+        if entry.get("verdict") == "concern"
+    ]
+    if concerns:
+        print(f"   [{label}] needs_revision=True, concerns: {', '.join(concerns)}")
+    else:
+        print(f"   [{label}] needs_revision=False, all clean")
 
 
 async def generate_quiz_questions(topic: str, content: str) -> list:
