@@ -970,6 +970,132 @@ No markdown, no commentary outside the JSON."""
         }
 
 
+async def revise_content_draft(
+    draft: str,
+    critique: dict,
+    topic: str,
+    skill_level: str,
+) -> str:
+    """Rewrite a draft to address validator concerns.
+
+    Consumes the STRUCTURED critique (per-dimension notes), not the
+    creator-facing summary. The summary was synthesized for human
+    readability — it omits dimensions that passed and avoids rubric
+    labels. The revision model needs the full signal: which exact
+    dimensions failed, what the validator quoted from the draft, and
+    what specifically to fix.
+
+    Preserves the draft's overall structure (section headings, paragraph
+    shape, approximate length, grade-level voice). Only the parts the
+    critique flagged should change. Returns the full revised draft as a
+    single markdown string — same shape as `generate_topic_content`'s
+    output, so downstream code doesn't need to know whether it's looking
+    at a first draft or a revised one.
+
+    Args:
+        draft: The current draft markdown.
+        critique: The validator's full return dict (dimensions, summary,
+            needs_revision). Caller is expected to invoke this only when
+            critique["needs_revision"] is True; if no dimensions have a
+            "concern" verdict, this function returns the draft unchanged.
+        topic: The original topic the creator entered.
+        skill_level: One of "Beginner", "Explorer", "Expert".
+
+    Returns:
+        The revised markdown draft. On any upstream failure (Gemini error,
+        empty response), returns the original `draft` unchanged. The
+        orchestrator's next validate pass will re-flag the issues, and the
+        creator sees the unchanged content with the validator's notes —
+        better than a hard error or a placeholder string.
+    """
+
+    # Pull only the dimensions that earned a concern. Pass dimensions are
+    # noise to the revision model — they don't need to know what's already
+    # working, only what to fix.
+    concerns = [
+        (dim, entry["notes"])
+        for dim, entry in critique.get("dimensions", {}).items()
+        if entry.get("verdict") == "concern" and entry.get("notes")
+    ]
+
+    if not concerns:
+        # Nothing to revise. Caller probably shouldn't have invoked us;
+        # return the draft as-is rather than calling Gemini for nothing.
+        return draft
+
+    # Mirror the generator's skill-level guidelines so the revision stays
+    # on the same yardstick the original draft was written against.
+    skill_guidelines = {
+        "Beginner": "simple everyday vocabulary, 8-12 word sentences, basic concepts only",
+        "Explorer": "intermediate vocabulary with subject-specific terms explained, 10-15 word sentences, comprehensive coverage from multiple angles",
+        "Expert":   "advanced vocabulary with technical terms explained, 12-20 word sentences, in-depth analysis and sophisticated connections",
+    }
+    voice = skill_guidelines.get(skill_level, skill_guidelines["Explorer"])
+
+    # Format the concerns as a clean list. The dimension name is included
+    # so the revision model knows what kind of issue each note represents
+    # (a safety problem warrants a different fix than a completeness gap),
+    # but it isn't asked to label its changes by dimension in the output.
+    issues_block = "\n".join(
+        f"- [{dim}] {notes}" for dim, notes in concerns
+    )
+
+    system_prompt = f"""You are revising your own earlier draft of an educational article based on editorial feedback. Your goal is to address the specific issues the editor flagged while preserving everything that's working about the draft.
+
+TOPIC: {topic}
+SKILL_LEVEL: {skill_level}
+TARGET VOICE: {voice}
+
+ISSUES TO ADDRESS:
+{issues_block}
+
+REVISION RULES:
+1. Address every issue in the list above. For factual errors, correct them with accurate information. For bias issues, broaden the framing to be more representative. For grade-level mismatches, adjust vocabulary and sentence length toward the target voice. For completeness gaps, add the missing perspective. For safety issues, remove or rewrite the dangerous content entirely. For age-appropriate concerns, soften or remove the unfit material.
+
+2. Preserve the draft's structure. Keep the section headings (including the emoji prefixes), keep approximately the same number of sections, keep approximately the same total length (~900 words), keep the magazine-article voice. Do not reorganize sections or invent a wholly new structure.
+
+3. Do not rewrite parts of the draft that the editor did not flag. If the issues list says nothing about, say, the conclusion paragraph, leave the conclusion paragraph alone. Targeted revision, not a full rewrite.
+
+4. Maintain the engaging, curious-kids-magazine tone. The revision should still feel like the same article — just with the flagged problems fixed.
+
+5. Output the FULL REVISED DRAFT as a single markdown document. No commentary, no list of changes, no explanation of what you fixed, no diff format. Just the article.
+
+ORIGINAL DRAFT:
+{draft}
+
+Now produce the revised draft."""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=system_prompt,
+            config=types.GenerateContentConfig(
+                # 0.5 — high enough to actually rewrite, low enough to stay
+                # grounded in the original. Generator uses 0.7 (creative);
+                # we want less drift than that on a revision pass.
+                temperature=0.5,
+                max_output_tokens=8000,
+                # Thinking off — the validator already did the reasoning.
+                # Revision just executes the rewrite.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+
+        revised = (response.text or "").strip()
+        if not revised:
+            raise ValueError("Empty response from revision model")
+
+        return revised
+
+    except Exception as e:
+        # Graceful degradation: if revision fails, return the original
+        # draft. The orchestrator's next validate pass will re-flag the
+        # same concerns, and the creator will see the unchanged content
+        # with actionable feedback rather than an error or placeholder.
+        print(f"⚠️ Revision failed ({type(e).__name__}: {e}); returning original draft")
+        return draft
+
+
 async def generate_quiz_questions(topic: str, content: str) -> list:
     """Generate 5 MCQ questions based on article content."""
     prompt = f"""Based on this educational article about {topic}, create exactly 5 multiple choice questions.
