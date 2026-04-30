@@ -863,10 +863,26 @@ FOR EACH DIMENSION return:
   - verdict: "pass" or "concern"
   - notes: empty string if pass; a specific, actionable observation if concern. Reference exact phrases or sections from the draft when possible.
 
+THRESHOLD FOR "concern" — read this carefully:
+A dimension earns "concern" ONLY when there is a REAL PROBLEM that meaningfully degrades the draft for the target audience. Concrete examples of real problems:
+  - A wrong fact, date, or statistic stated as truth
+  - A dangerous or harmful instruction
+  - Content clearly off the grade level (e.g. an Explorer draft written entirely at a 1st-grade level, or stuffed with PhD vocabulary)
+  - A narrowly framed perspective that genuinely OMITS a meaningful piece of the picture (not "could mention more")
+  - Content unfit for ages 8-18 (graphic, traumatic, sexual, etc.)
+  - Bias that misrepresents a topic
+NOT concerns — these should result in a "pass" verdict:
+  - "Could be even better if you added X" suggestions
+  - One or two longer sentences in an otherwise grade-appropriate draft (some variation is normal good writing)
+  - Stretch coverage ideas like additional sections on related sub-topics
+  - Minor polish or stylistic preferences
+Default to "pass" unless there is a clear, real problem. The validator's job is to catch things that need fixing, not to find ways every draft could be marginally improved.
+
 THEN write a single `summary` field for the creator:
   - Conversational tone, like a thoughtful editor giving notes to a colleague.
   - Only mention dimensions that earned a "concern" verdict. Do not list dimensions that passed.
   - Do not name the dimensions explicitly ("accuracy", "bias", "grade level", etc.). Describe the issue in plain language.
+  - When you mention an issue, reference at least one specific phrase, claim, or section from the draft so the creator can act on the summary alone — do not say things like "factual details need checking" without naming which fact, or "the content is dangerous" without naming what's dangerous. Quote or paraphrase the offending part directly.
   - If ALL dimensions pass, the summary is a brief 1-sentence positive confirmation, e.g. "This draft looks solid — accurate, well-pitched for the level, and covers the topic from multiple angles."
   - Keep it under 120 words.
 
