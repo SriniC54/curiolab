@@ -35,8 +35,8 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 
 ## Phase 2 — Backend validator + generation loop
 
-- [ ] **#7 Implement validator critique function** ⬜
-  Takes (draft, topic, skill_level), returns structured critique across 7 dimensions: accuracy, grade-level, bias, completeness, politically correct, age-appropriate, safety. Synthesized to one narrative summary for the creator.
+- [x] **#7 Implement validator critique function** ✅
+  `validate_content_draft(draft, topic, skill_level)` in `backend/main.py`. Single Gemini call with `response_mime_type="application/json"` and thinking enabled (budget 2048). Six internal dimensions: accuracy, grade_level, bias, completeness, age_appropriate, safety — "politically correct" folded into bias since they collapse to the same fair-representation concern. Dimension framework is invisible to creators; the `summary` field is conversational and mentions only dimensions with a `concern` verdict (named in plain language, never as the rubric label). Returns `{dimensions, summary, needs_revision}`. Defensive shape validation; on any upstream failure returns a permissive default so the orchestrator never blocks behind a flaky reviewer. Standalone — wiring lands in #9.
 
 - [ ] **#8 Implement revision function** ⬜
   Takes (draft, critique, topic, skill_level), returns revised draft addressing the critique while preserving section structure.

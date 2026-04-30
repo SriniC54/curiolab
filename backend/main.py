@@ -782,6 +782,178 @@ Write EXACTLY {guidelines['target_words']} words with {guidelines['paragraphs']}
     return response.text.strip()
 
 
+# Validator dimensions are an INTERNAL rubric. The creator never sees these
+# names — only the synthesized `summary` field. Keeping the rubric internal
+# is intentional: creators get conversational editorial notes, not a
+# checklist UI. The structured form is what the revision step (task #8)
+# consumes and what we persist for debugging / prompt tuning.
+VALIDATOR_DIMENSIONS = [
+    "accuracy",
+    "grade_level",
+    "bias",
+    "completeness",
+    "age_appropriate",
+    "safety",
+]
+
+
+async def validate_content_draft(
+    draft: str,
+    topic: str,
+    skill_level: str,
+) -> dict:
+    """Run the AI validator over a generated draft.
+
+    Critiques the draft across six internal dimensions — accuracy, grade-level,
+    bias, completeness, age-appropriate, and safety — in a single Gemini call.
+    The dimension framework stays internal; the creator-facing `summary` only
+    surfaces dimensions that have issues, written as a conversational note.
+
+    Args:
+        draft: The full markdown content the generator produced.
+        topic: The topic the creator entered.
+        skill_level: One of "Beginner", "Explorer", "Expert".
+
+    Returns:
+        dict with keys:
+          - summary (str): Conversational note for the creator. Mentions only
+            dimensions where issues were found (issues are described in plain
+            language; dimension names are never surfaced). If the draft is
+            clean, the summary is a brief positive confirmation.
+          - dimensions (dict): Per-dimension verdict + notes for internal use
+            by the revision step (task #8) and for debugging. Persisted
+            alongside `summary` in content_items.validator_feedback.
+          - needs_revision (bool): True if any dimension verdict is "concern".
+            Orchestrator stop signal — the loop short-circuits on a clean
+            draft instead of churning through revisions.
+
+    Never raises. On JSON parse failure, empty Gemini response, or any other
+    upstream error, returns a permissive default that lets the orchestrator
+    continue without a revise pass. The caller is responsible for logging.
+    """
+
+    # Skill-level criteria mirror the generator's own guidelines so the
+    # validator judges drafts against the same yardstick the writer was given.
+    grade_level_criteria = {
+        "Beginner": "8-12 word sentences, simple everyday vocabulary, basic concepts only",
+        "Explorer": "10-15 word sentences, intermediate vocabulary with subject-specific terms explained, comprehensive coverage",
+        "Expert":   "12-20 word sentences, advanced vocabulary with technical terms explained, in-depth analysis and sophisticated connections",
+    }
+    grade_target = grade_level_criteria.get(skill_level, grade_level_criteria["Explorer"])
+
+    system_prompt = f"""You are a careful editorial reviewer for an educational content platform aimed at curious kids ages 8-18. You are reviewing a draft article a creator (a parent or teacher) plans to assign to students.
+
+Evaluate the draft against six INTERNAL dimensions. The creator does NOT see these dimension names — they are your private rubric. The creator only sees a single short conversational note from you.
+
+THE SIX DIMENSIONS:
+
+1. accuracy — Are the facts, dates, statistics, and scientific mechanisms correct? Flag hallucinations, common myths presented as fact, wrong numbers, and incorrect causal explanations.
+
+2. grade_level — Is the writing pitched at the requested skill level? The current draft is for skill_level "{skill_level}", which means: {grade_target}. Flag drafts that are too advanced or too simple for this level.
+
+3. bias — Does the draft present a one-sided view of something with a fuller picture? Flag accidentally narrow framing (e.g., only Western examples on a global topic, only one of multiple legitimate scientific theories presented as the only one). This is about completeness of perspective, not political alignment.
+
+4. completeness — Does the draft cover the topic from multiple interesting angles (history, mechanism, cultural significance, real-world applications, surprising facts), or does it tunnel into one aspect? Flag drafts that are technically fine but weirdly narrow.
+
+5. age_appropriate — Is the subject matter and emotional weight suitable for ages 8-18? Flag graphic violence, sexual content, disturbing imagery, traumatic detail, or anything a parent would not want a 10-year-old reading independently.
+
+6. safety — Could a kid be harmed by acting on this content? Flag instructions involving fire, chemicals, climbing, dangerous tools, dieting, self-harm, or anything that glorifies risky behavior.
+
+FOR EACH DIMENSION return:
+  - verdict: "pass" or "concern"
+  - notes: empty string if pass; a specific, actionable observation if concern. Reference exact phrases or sections from the draft when possible.
+
+THEN write a single `summary` field for the creator:
+  - Conversational tone, like a thoughtful editor giving notes to a colleague.
+  - Only mention dimensions that earned a "concern" verdict. Do not list dimensions that passed.
+  - Do not name the dimensions explicitly ("accuracy", "bias", "grade level", etc.). Describe the issue in plain language.
+  - If ALL dimensions pass, the summary is a brief 1-sentence positive confirmation, e.g. "This draft looks solid — accurate, well-pitched for the level, and covers the topic from multiple angles."
+  - Keep it under 120 words.
+
+Set `needs_revision` to true if any dimension has a "concern" verdict, otherwise false.
+
+TOPIC: {topic}
+SKILL_LEVEL: {skill_level}
+
+Respond with VALID JSON ONLY, matching this shape exactly:
+{{
+  "dimensions": {{
+    "accuracy":         {{"verdict": "pass" | "concern", "notes": "..."}},
+    "grade_level":      {{"verdict": "pass" | "concern", "notes": "..."}},
+    "bias":             {{"verdict": "pass" | "concern", "notes": "..."}},
+    "completeness":     {{"verdict": "pass" | "concern", "notes": "..."}},
+    "age_appropriate":  {{"verdict": "pass" | "concern", "notes": "..."}},
+    "safety":           {{"verdict": "pass" | "concern", "notes": "..."}}
+  }},
+  "summary": "...",
+  "needs_revision": true | false
+}}
+
+No markdown, no commentary outside the JSON."""
+
+    user_prompt = f"DRAFT TO REVIEW:\n\n{draft}"
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{system_prompt}\n\n{user_prompt}",
+            config=types.GenerateContentConfig(
+                # Low temp — we want consistent critique, not creative writing.
+                temperature=0.2,
+                max_output_tokens=4000,
+                response_mime_type="application/json",
+                # Thinking ENABLED here (unlike the generator). Accuracy and
+                # grade-level judgement benefit from reasoning, and the
+                # validator runs once per draft, not on every page load.
+                thinking_config=types.ThinkingConfig(thinking_budget=2048),
+            ),
+        )
+
+        text = (response.text or "").strip()
+        if not text:
+            raise ValueError("Empty response from validator")
+
+        # Defensive parse — even with response_mime_type="application/json"
+        # we strip stray code fences just in case the model misbehaves.
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\n?|\n?```$", "", text).strip()
+
+        result = json.loads(text)
+
+        # Shape check — the orchestrator depends on these keys existing.
+        if not isinstance(result, dict):
+            raise ValueError("Validator response is not an object")
+        for key in ("dimensions", "summary", "needs_revision"):
+            if key not in result:
+                raise ValueError(f"Validator response missing '{key}'")
+        if not isinstance(result["dimensions"], dict):
+            raise ValueError("Validator 'dimensions' is not an object")
+        for dim in VALIDATOR_DIMENSIONS:
+            if dim not in result["dimensions"]:
+                raise ValueError(f"Validator missing dimension '{dim}'")
+            entry = result["dimensions"][dim]
+            if not isinstance(entry, dict) or "verdict" not in entry or "notes" not in entry:
+                raise ValueError(f"Dimension '{dim}' malformed")
+            if entry["verdict"] not in ("pass", "concern"):
+                raise ValueError(f"Dimension '{dim}' has invalid verdict")
+
+        return result
+
+    except Exception as e:
+        # Permissive default: if the validator itself fails, treat the draft
+        # as acceptable. Better to ship a slightly imperfect draft than to
+        # block a creator behind a flaky reviewer. Logged so we can investigate.
+        print(f"⚠️ Validator failed ({type(e).__name__}: {e}); treating draft as acceptable")
+        return {
+            "dimensions": {
+                dim: {"verdict": "pass", "notes": ""}
+                for dim in VALIDATOR_DIMENSIONS
+            },
+            "summary": "Validator review unavailable for this draft.",
+            "needs_revision": False,
+        }
+
+
 async def generate_quiz_questions(topic: str, content: str) -> list:
     """Generate 5 MCQ questions based on article content."""
     prompt = f"""Based on this educational article about {topic}, create exactly 5 multiple choice questions.

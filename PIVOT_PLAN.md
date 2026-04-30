@@ -24,17 +24,16 @@ The long-term vision is a marketplace: creators publish, consumers (other parent
 
 **Content lifecycle.** Content becomes a persisted, owned entity (`content_items` table) with a clear status and visibility. It is no longer generated on demand for students; it is generated, validated, and assigned by a creator.
 
-**Generation loop.** Single LLM call becomes a generate → validate → revise → validate → revise cycle (2 revisions, capped). The validator agent checks seven dimensions:
+**Generation loop.** Single LLM call becomes a generate → validate → revise → validate → revise cycle (2 revisions, capped). The validator agent checks six **internal** dimensions:
 
 1. Accuracy
 2. Grade-level appropriateness
-3. Bias
+3. Bias (absorbs the original "political correctness" concept; both reduce to fair representation)
 4. Completeness
-5. Political correctness
-6. Age-appropriateness
-7. Safety (no prohibited-topic zones)
+5. Age-appropriateness
+6. Safety (no prohibited-topic zones, no harmful instructions)
 
-The validator's final output to the creator is a **single synthesized narrative summary**, not a per-dimension breakdown. Per-dimension is a V2 refinement.
+The dimension framework is **invisible to the creator** — it is the validator's private rubric. The creator only sees a **single conversational narrative** that mentions only the dimensions where issues were found, in plain language, without naming the rubric. Per-dimension UI (e.g. a breakdown view) is a V2 refinement; the structured form is persisted internally for prompt tuning and the revision step.
 
 **Creator UI.** New `/create` page with modern skeleton-style loading indicator while the 20–40s orchestrator runs. Review screen shows the final content plus the validator summary and four actions: Regenerate, Save to library, Assign to students, Publish public. New `/library` page lists a creator's content. Existing creator dashboard gets updated so assignment pulls from library instead of typing a topic string.
 
@@ -72,7 +71,7 @@ Tasks are tracked in the Cowork task list for this session. Summary:
 - Link `batch_topics` to `content_item_id`
 
 **Backend**
-- Validator critique function (7 dimensions, structured internally)
+- Validator critique function (6 dimensions, structured internally; only-issues conversational narrative surfaced to creator)
 - Revision function
 - Orchestrator (generate → validate → revise × 2)
 - `POST /creator/content/generate` endpoint (role-gated to creator)
