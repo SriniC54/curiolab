@@ -503,6 +503,18 @@ class ContentRequest(BaseModel):
     topic: str
     skill_level: str
 
+
+class CreatorContentRequest(BaseModel):
+    """Request body for POST /creator/content/generate.
+
+    Distinct from ContentRequest (which serves the legacy on-demand
+    student endpoint). Lives in its own model so the creator-flow
+    contract can evolve independently of the legacy generator.
+    """
+    topic: str
+    skill_level: str
+
+
 class ContentResponse(BaseModel):
     topic: str
     skill_level: str
@@ -685,6 +697,125 @@ async def generate_content(request: ContentRequest, authorization: Optional[str]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+
+
+@app.post("/creator/content/generate")
+async def creator_generate_content(
+    request: CreatorContentRequest,
+    current_user: dict = Depends(require_creator),
+):
+    """Run the validated-content orchestrator for a creator.
+
+    This is the single backend entrypoint the /create page hits. It owns:
+      - Auth (creator role required, via require_creator dependency).
+      - Input validation (topic length, content appropriateness, skill level).
+      - Daily cap enforcement (MAX_GENERATIONS_PER_DAY per creator, midnight UTC reset).
+      - Calling the orchestrator (#9) which does the generate-validate-revise loop
+        and persists the content_items row.
+      - Surfacing remaining_today in the response so the UI can show the budget.
+
+    Returns the orchestrator's payload plus `remaining_today`. On daily cap
+    exceeded, returns 429 with the cap and reset window.
+    """
+    creator_id = current_user["user_id"]
+
+    # --- Input validation. Mirrors the legacy /generate-content guards so
+    # the PoC content gates are consistent across both entrypoints. The
+    # creator endpoint does NOT bypass topic-appropriateness — even though
+    # creators are authenticated, we don't want the validator loop to
+    # process inappropriate topics in the first place.
+    topic = (request.topic or "").strip()
+    if len(topic) < 2:
+        raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
+
+    if not is_topic_appropriate(topic):
+        raise HTTPException(
+            status_code=400,
+            detail="Please choose an educational topic appropriate for young learners",
+        )
+
+    if request.skill_level not in ("Beginner", "Explorer", "Expert"):
+        raise HTTPException(
+            status_code=400,
+            detail="skill_level must be one of: Beginner, Explorer, Expert",
+        )
+
+    # --- Daily cap check. Counts content_items rows (including soft-deleted)
+    # for this creator with created_at on today's UTC date. Cheap query;
+    # the (creator_id, deleted_at) index from task #4 covers it.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM content_items
+            WHERE creator_id = ? AND date(created_at) = date('now')
+            """,
+            (creator_id,),
+        )
+        used_today = cursor.fetchone()[0]
+    finally:
+        conn.close()
+
+    if used_today >= MAX_GENERATIONS_PER_DAY:
+        # 429 Too Many Requests is the right code for rate-limit-style caps.
+        # Frontend (/create page in task #12) will catch this and show a
+        # friendly explanation with the reset window.
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "daily_generation_limit",
+                "message": (
+                    f"You've used all {MAX_GENERATIONS_PER_DAY} of your daily generations. "
+                    "Your budget resets at midnight UTC."
+                ),
+                "limit": MAX_GENERATIONS_PER_DAY,
+                "used_today": used_today,
+                "resets_at": "midnight_utc",
+            },
+        )
+
+    # --- Run the orchestrator. The orchestrator handles its own internal
+    # error recovery (validator/revision permissive defaults) and persists
+    # the content_items row before returning. Anything that escapes here is
+    # a real failure — most likely the *first* generator call 5xx'd, since
+    # downstream Gemini failures are absorbed.
+    try:
+        result = await orchestrate_content_creation(
+            creator_id=creator_id,
+            topic=topic,
+            skill_level=request.skill_level,
+        )
+    except Exception as e:
+        # Surface as 500. Don't retry server-side — let the frontend's
+        # /create page (#12) handle retry UX so the creator sees what
+        # happened and can decide. The orchestrator already logged.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Content generation failed: {type(e).__name__}: {e}",
+        )
+
+    # --- Append remaining_today so the UI can display the budget without
+    # a separate roundtrip. Re-count rather than `used_today + 1` so the
+    # response is correct even if a parallel request snuck in. Cheap.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM content_items
+            WHERE creator_id = ? AND date(created_at) = date('now')
+            """,
+            (creator_id,),
+        )
+        used_after = cursor.fetchone()[0]
+    finally:
+        conn.close()
+
+    result["remaining_today"] = max(0, MAX_GENERATIONS_PER_DAY - used_after)
+    result["daily_limit"] = MAX_GENERATIONS_PER_DAY
+    return result
+
 
 async def generate_topic_content(topic: str, skill_level: str) -> str:
     """Generate comprehensive educational content for any topic using AI."""
@@ -1106,6 +1237,16 @@ Now produce the revised draft."""
 # draft without improving the validator score. Tunable; not env-var-driven
 # for MVP since changing it is a meaningful UX decision.
 MAX_REVISIONS = 2
+
+# Per-creator daily cap on /creator/content/generate. This is a PoC budget
+# guard, not an abuse signal — keeps token spend predictable while we
+# gather feedback on the create-and-publish flow. Bump (or remove) as soon
+# as we trust the model and want to open the firehose. Window is calendar
+# day in UTC, matched against content_items.created_at via SQLite's
+# date('now') — simple, no separate counter table needed. Soft-deleted
+# rows still count: token spend already happened, so deleting doesn't
+# refund the budget.
+MAX_GENERATIONS_PER_DAY = 3
 
 
 async def orchestrate_content_creation(
