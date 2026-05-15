@@ -49,8 +49,8 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 
 ## Phase 3 — Creator UI
 
-- [ ] **#11 Replace homepage with sign-up funnel** ⬜
-  Remove student topic-browse. Marketing landing + Sign up / Sign in CTAs. Role-aware routing post-auth.
+- [x] **#11 Replace homepage with sign-up funnel** ✅
+  Rewrote `pages/index.tsx`. Removed the old `topicSuggestions` grid and freeform topic-search card entirely (they implied on-demand browse we no longer deliver). New homepage is a marketing landing for signed-out visitors: hero with owl + "Curiosity starts here" + new subhead about validated content, primary "Sign Up Free" CTA, secondary "Sign in" link, plus a 3-step "How it works" card (Pick any topic → AI reviews every draft → Assign and track) and a closing "Get Started Free" CTA. Role-aware routing: signed-in creators auto-redirect to `/create`, signed-in students to `/student-dashboard`. While auth state resolves or a redirect is in flight, a neutral spinner is rendered instead of the marketing pitch — avoids a flash of "Sign Up" for users already signed in. Reuses existing `AuthModal` (no new route). Imports cleaned (`UserProfile` and `analytics` removed; they weren't used in the new page). Note: `/create` page lands in task #12 — until then, signed-in creators get a 404 on redirect (acceptable for sequential dev).
 
 - [ ] **#12 Build `/create` page with loading UX** ⬜
   Topic input, skill_level selector, Generate button. Modern skeleton/card-shaped loading state for the 20–40s orchestrator run.

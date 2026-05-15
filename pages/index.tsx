@@ -1,57 +1,63 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useAuth } from '../contexts/AuthContext'
 import { AuthModal } from '../components/AuthModal'
-import { UserProfile } from '../components/UserProfile'
-import analytics from '../lib/analytics'
 import Footer from '../components/Footer'
 
-const topicSuggestions = [
-  { name: 'Dinosaurs', emoji: '🦕', color: 'from-emerald-500 to-teal-600' },
-  { name: 'Space', emoji: '🚀', color: 'from-violet-600 to-purple-700' },
-  { name: 'Ocean', emoji: '🌊', color: 'from-sky-500 to-blue-600' },
-  { name: 'Pirates', emoji: '🏴‍☠️', color: 'from-rose-500 to-red-700' },
-  { name: 'Robots', emoji: '🤖', color: 'from-slate-600 to-gray-700' },
-  { name: 'Dragons', emoji: '🐉', color: 'from-fuchsia-500 to-pink-600' },
-  { name: 'Volcanoes', emoji: '🌋', color: 'from-orange-500 to-red-600' },
-  { name: 'Castles', emoji: '🏰', color: 'from-blue-500 to-indigo-600' },
-  { name: 'Butterflies', emoji: '🦋', color: 'from-yellow-400 to-orange-500' },
-  { name: 'Music', emoji: '🎵', color: 'from-indigo-500 to-violet-600' },
-  { name: 'Food', emoji: '🍎', color: 'from-red-400 to-amber-500' },
-  { name: 'Weather', emoji: '⛈️', color: 'from-cyan-500 to-sky-600' },
-]
-
+/**
+ * Homepage — marketing landing + auth funnel.
+ *
+ * Pre-pivot, this was a student-facing topic playground (12 emoji tiles +
+ * a freeform topic search). Post-pivot, students only consume what's
+ * assigned to them and only signed-up creators generate content, so the
+ * homepage's job changed:
+ *
+ *  - Not signed in → marketing pitch + Sign Up / Sign In CTAs.
+ *  - Signed in as creator → redirect to /create.
+ *  - Signed in as student → redirect to /student-dashboard.
+ *
+ * The old topicSuggestions array and topic-selection handlers are
+ * removed entirely. Showing them would imply browsable on-demand content
+ * we no longer deliver.
+ */
 export default function Home() {
   const { user, isAuthenticated, isLoading, logout, role } = useAuth()
   const router = useRouter()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  const [showProfile, setShowProfile] = useState(false)
-  const [customTopic, setCustomTopic] = useState('')
 
-  const navigate = (topic: string) => {
-    router.push(`/learn/${encodeURIComponent(topic)}`)
-  }
-
-  const handleTopicSelection = (topic: string) => {
-    analytics.topicSelected(topic, 'suggestion')
-    navigate(topic)
-  }
-
-  const handleCustomTopicSubmit = () => {
-    const topic = customTopic.trim()
-    if (topic.length >= 2) {
-      analytics.topicSelected(topic, 'custom')
-      navigate(topic)
+  // Auto-redirect signed-in users to their dashboard. The homepage has no
+  // value for someone already in — landing on it would just be a click
+  // between them and where they want to be.
+  useEffect(() => {
+    if (isLoading || !isAuthenticated) return
+    if (role === 'creator') {
+      router.replace('/create')
+    } else {
+      router.replace('/student-dashboard')
     }
+  }, [isAuthenticated, isLoading, role, router])
+
+  // While auth state is resolving OR while a redirect is in flight, show a
+  // neutral loading state instead of the marketing pitch. Avoids a
+  // visible flash of "Sign Up" for users who are already signed in.
+  if (isLoading || isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#f8f7ff] flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      </div>
+    )
   }
 
   return (
     <>
       <Head>
-        <title>🦉 CurioLab — Curiosity starts here!</title>
-        <meta name="description" content="Interactive learning adventures for kids" />
+        <title>🦉 CurioLab — Trustworthy learning content for your kids</title>
+        <meta
+          name="description"
+          content="Generate magazine-quality articles on any topic for your kids — every one reviewed for accuracy, bias, and age-appropriateness before they read it."
+        />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
@@ -64,120 +70,104 @@ export default function Home() {
           <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <span className="text-xl font-black text-white">🦉 CurioLab</span>
-              <div className="flex items-center space-x-3">
-                {isLoading ? (
-                  <div className="w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                ) : isAuthenticated ? (
-                  <div className="flex items-center space-x-3">
-                    <span className="text-sm text-white/80 hidden sm:block">
-                      Hi, {user?.name || user?.email}!
-                    </span>
-                    {role === 'creator' ? (
-                      <a
-                        href="/teacher-dashboard"
-                        className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
-                      >
-                        Teacher Dashboard
-                      </a>
-                    ) : (
-                      <>
-                        <a
-                          href="/student-dashboard"
-                          className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
-                        >
-                          My Assignments
-                        </a>
-                        <button
-                          onClick={() => setShowProfile(true)}
-                          className="px-3 py-1 text-sm bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors font-semibold"
-                        >
-                          Profile
-                        </button>
-                      </>
-                    )}
-                    <button
-                      onClick={logout}
-                      className="px-3 py-1 text-sm text-white/60 hover:text-white transition-colors"
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => { setAuthMode('login'); setShowAuthModal(true) }}
-                      className="px-4 py-2 text-sm text-white/80 hover:text-white font-semibold transition-colors"
-                    >
-                      Sign In
-                    </button>
-                    <button
-                      onClick={() => { setAuthMode('register'); setShowAuthModal(true) }}
-                      className="px-4 py-2 text-sm bg-white text-indigo-700 rounded-lg hover:bg-white/90 transition-colors font-bold"
-                    >
-                      Sign Up
-                    </button>
-                  </div>
-                )}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => { setAuthMode('login'); setShowAuthModal(true) }}
+                  className="px-4 py-2 text-sm text-white/80 hover:text-white font-semibold transition-colors"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => { setAuthMode('register'); setShowAuthModal(true) }}
+                  className="px-4 py-2 text-sm bg-white text-indigo-700 rounded-lg hover:bg-white/90 transition-colors font-bold"
+                >
+                  Sign Up
+                </button>
               </div>
             </div>
           </nav>
 
-          {/* Hero text */}
-          <div className="text-center pt-6 pb-28 px-4">
+          {/* Hero text + primary CTA */}
+          <div className="text-center pt-6 pb-32 px-4 max-w-3xl mx-auto">
             <div className="text-7xl sm:text-8xl inline-block animate-float">🦉</div>
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white mt-5 leading-tight">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white mt-5 leading-tight">
               Curiosity starts here
-            </h2>
-            <p className="text-indigo-200 text-lg sm:text-xl mt-4 max-w-lg mx-auto">
-              Explore any topic. Learn something amazing every day.
+            </h1>
+            <p className="text-indigo-100 text-lg sm:text-xl mt-5 max-w-xl mx-auto leading-relaxed">
+              Generate magazine-quality articles on any topic for your kids — every one reviewed for accuracy, bias, and age-appropriateness before they read it.
             </p>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <button
+                onClick={() => { setAuthMode('register'); setShowAuthModal(true) }}
+                className="px-8 py-3 bg-white text-indigo-700 rounded-xl font-extrabold text-lg hover:bg-white/90 transition-colors shadow-lg w-full sm:w-auto"
+              >
+                Sign Up Free
+              </button>
+              <button
+                onClick={() => { setAuthMode('login'); setShowAuthModal(true) }}
+                className="px-6 py-3 text-white/90 hover:text-white font-semibold transition-colors underline-offset-4 hover:underline"
+              >
+                Already have an account? Sign in →
+              </button>
+            </div>
           </div>
 
         </div>
 
-        {/* Search card — overlaps hero with negative margin */}
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 -mt-16 relative z-10 pb-16">
-          <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+        {/* "How it works" card — overlaps hero with negative margin */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 -mt-20 relative z-10 pb-16">
+          <div className="bg-white rounded-2xl shadow-xl p-8 sm:p-10">
+            <h2 className="text-center text-sm font-bold uppercase tracking-wider text-indigo-600 mb-8">
+              How it works
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-10">
 
-            {/* Search */}
-            <div className="flex gap-3 mb-6">
-              <input
-                type="text"
-                value={customTopic}
-                onChange={e => setCustomTopic(e.target.value)}
-                onKeyPress={e => e.key === 'Enter' && handleCustomTopicSubmit()}
-                placeholder="Type any topic — Black Holes, Ancient Egypt, Pizza..."
-                className="flex-1 px-4 py-3 text-base sm:text-lg rounded-xl border-2 border-gray-200 focus:border-indigo-400 focus:outline-none text-gray-800 bg-gray-50 font-medium"
-                autoFocus
-              />
+              {/* Step 1 */}
+              <div className="text-center">
+                <div className="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center mx-auto mb-4 font-extrabold text-xl">
+                  1
+                </div>
+                <h3 className="font-extrabold text-gray-900 text-lg mb-2">Pick any topic</h3>
+                <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
+                  Volcanoes, fractions, ancient Egypt — anything your child is curious about. Choose a skill level and we&apos;ll turn it into a magazine-style article.
+                </p>
+              </div>
+
+              {/* Step 2 */}
+              <div className="text-center">
+                <div className="w-12 h-12 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center mx-auto mb-4 font-extrabold text-xl">
+                  2
+                </div>
+                <h3 className="font-extrabold text-gray-900 text-lg mb-2">AI reviews every draft</h3>
+                <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
+                  Each article is checked for accuracy, balance, age-appropriateness, and safety — then revised. You see the polished result, not the raw output.
+                </p>
+              </div>
+
+              {/* Step 3 */}
+              <div className="text-center">
+                <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mx-auto mb-4 font-extrabold text-xl">
+                  3
+                </div>
+                <h3 className="font-extrabold text-gray-900 text-lg mb-2">Assign and track</h3>
+                <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
+                  Save articles to your library, assign them to your kids or classrooms, and see what they&apos;ve read. Built for parents and teachers.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Closing CTA inside the card */}
+            <div className="mt-10 pt-8 border-t border-gray-100 text-center">
               <button
-                onClick={handleCustomTopicSubmit}
-                disabled={customTopic.trim().length < 2}
-                className="px-5 py-3 bg-indigo-600 text-white font-bold text-lg rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => { setAuthMode('register'); setShowAuthModal(true) }}
+                className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-extrabold text-lg hover:bg-indigo-700 transition-colors shadow-md"
               >
-                Go →
+                Get Started Free
               </button>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="flex-1 h-px bg-gray-100" />
-              <span className="text-sm text-gray-400 font-semibold">or pick a topic</span>
-              <div className="flex-1 h-px bg-gray-100" />
-            </div>
-
-            {/* Topic grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {topicSuggestions.map((topic, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleTopicSelection(topic.name)}
-                  className={`p-5 rounded-2xl transition-all duration-150 hover:scale-105 active:scale-95 bg-gradient-to-br ${topic.color} text-white shadow-md hover:shadow-xl touch-manipulation text-left`}
-                >
-                  <div className="text-4xl mb-2">{topic.emoji}</div>
-                  <div className="text-sm font-extrabold leading-tight">{topic.name}</div>
-                </button>
-              ))}
+              <p className="text-sm text-gray-500 mt-3">
+                No credit card required.
+              </p>
             </div>
 
           </div>
@@ -186,26 +176,6 @@ export default function Home() {
         <Footer />
 
         <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} defaultMode={authMode} />
-
-        {/* Profile modal */}
-        {showProfile && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">My Learning Profile</h2>
-                  <button
-                    onClick={() => setShowProfile(false)}
-                    className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-                  >
-                    ×
-                  </button>
-                </div>
-                <UserProfile />
-              </div>
-            </div>
-          </div>
-        )}
 
       </div>
     </>
