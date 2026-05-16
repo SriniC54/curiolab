@@ -717,7 +717,7 @@ async def creator_generate_content(
     Returns the orchestrator's payload plus `remaining_today`. On daily cap
     exceeded, returns 429 with the cap and reset window.
     """
-    creator_id = current_user["user_id"]
+    creator_id = current_user["id"]
 
     # --- Input validation. Mirrors the legacy /generate-content guards so
     # the PoC content gates are consistent across both entrypoints. The
@@ -815,6 +815,38 @@ async def creator_generate_content(
     result["remaining_today"] = max(0, MAX_GENERATIONS_PER_DAY - used_after)
     result["daily_limit"] = MAX_GENERATIONS_PER_DAY
     return result
+
+
+@app.get("/creator/content/budget")
+async def creator_content_budget(current_user: dict = Depends(require_creator)):
+    """Return the creator's daily generation budget for today.
+
+    Used by the /create page on load so we can render '3 / 3 left today'
+    without forcing the creator to attempt a generation first. Same
+    counting logic as the generate endpoint: rows in content_items for
+    this creator with created_at on today's UTC date, including
+    soft-deleted (token spend already happened).
+    """
+    creator_id = current_user["id"]
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM content_items
+            WHERE creator_id = ? AND date(created_at) = date('now')
+            """,
+            (creator_id,),
+        )
+        used_today = cursor.fetchone()[0]
+    finally:
+        conn.close()
+
+    return {
+        "used_today": used_today,
+        "remaining_today": max(0, MAX_GENERATIONS_PER_DAY - used_today),
+        "daily_limit": MAX_GENERATIONS_PER_DAY,
+    }
 
 
 async def generate_topic_content(topic: str, skill_level: str) -> str:
