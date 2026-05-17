@@ -849,6 +849,192 @@ async def creator_content_budget(current_user: dict = Depends(require_creator)):
     }
 
 
+# ---------------------------------------------------------------------------
+# Single-content-item endpoints — used by the /review/[id] page (task #13).
+# Each enforces creator ownership; an item belonging to a different creator
+# is treated as a 404 (not 403) to avoid leaking existence of other rows.
+# ---------------------------------------------------------------------------
+
+VALID_CONTENT_STATUS = {"draft", "validated", "published"}
+VALID_CONTENT_VISIBILITY = {"private", "assigned", "public"}
+
+
+class CreatorContentUpdate(BaseModel):
+    """Partial update to a content_items row. Either field may be omitted."""
+    status: Optional[str] = None
+    visibility: Optional[str] = None
+
+
+def _fetch_creator_content(content_id: int, creator_id: int) -> Optional[dict]:
+    """Return a content_item row dict if it exists and is owned by this
+    creator and not soft-deleted; otherwise None. Used by GET / PUT / DELETE
+    to centralize ownership + tombstone checks.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, creator_id, topic, skill_level, draft_content,
+                   final_content, validator_feedback, iteration_count,
+                   status, visibility, created_at, updated_at
+            FROM content_items
+            WHERE id = ? AND creator_id = ? AND deleted_at IS NULL
+            """,
+            (content_id, creator_id),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "creator_id": row[1],
+        "topic": row[2],
+        "skill_level": row[3],
+        "draft_content": row[4],
+        "final_content": row[5],
+        "validator_feedback": row[6],  # JSON string; caller may parse
+        "iteration_count": row[7],
+        "status": row[8],
+        "visibility": row[9],
+        "created_at": row[10],
+        "updated_at": row[11],
+    }
+
+
+@app.get("/creator/content/{content_id}")
+async def get_creator_content(
+    content_id: int,
+    current_user: dict = Depends(require_creator),
+):
+    """Fetch a single content_item owned by the current creator.
+
+    Backs the /review/[id] page's hard-refresh path — the orchestrator's
+    in-memory return covers the immediate post-generate case, but page
+    reloads, bookmarks, and library navigation all need a real GET.
+
+    Returns the row with validator_feedback parsed from JSON. 404 if the
+    id doesn't exist, isn't owned by this creator, or is soft-deleted.
+    """
+    item = _fetch_creator_content(content_id, current_user["id"])
+    if item is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Convert the stored JSON blob back into a dict for the client.
+    if item.get("validator_feedback"):
+        try:
+            item["validator_feedback"] = json.loads(item["validator_feedback"])
+        except Exception:
+            # Should never happen, but don't fail the read on a bad blob.
+            item["validator_feedback"] = None
+
+    return item
+
+
+@app.put("/creator/content/{content_id}")
+async def update_creator_content(
+    content_id: int,
+    body: CreatorContentUpdate,
+    current_user: dict = Depends(require_creator),
+):
+    """Update status and/or visibility on a content_item.
+
+    Used by the review screen's Save / Assign / Publish actions:
+      - Save to library:     status='validated'
+      - Assign to students:  status='validated'  (creator then routes to dashboard)
+      - Publish public:      visibility='public'
+      - Unpublish:           visibility='private'
+
+    Either field may be omitted. Values are validated against the legal sets
+    so the client can't put the row into an inconsistent state.
+    """
+    # Input validation first — cheaper than a DB roundtrip on a bad request.
+    if body.status is not None and body.status not in VALID_CONTENT_STATUS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {sorted(VALID_CONTENT_STATUS)}",
+        )
+    if body.visibility is not None and body.visibility not in VALID_CONTENT_VISIBILITY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid visibility. Must be one of: {sorted(VALID_CONTENT_VISIBILITY)}",
+        )
+    if body.status is None and body.visibility is None:
+        # Nothing to update; treat as a no-op success rather than a 400.
+        item = _fetch_creator_content(content_id, current_user["id"])
+        if item is None:
+            raise HTTPException(status_code=404, detail="Content not found")
+        return {"updated": False, "id": content_id}
+
+    # Ownership / existence check.
+    if _fetch_creator_content(content_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    # Build the partial update dynamically. updated_at always bumps so the
+    # library can sort by "most recently touched" in #14.
+    updates = []
+    values = []
+    if body.status is not None:
+        updates.append("status = ?")
+        values.append(body.status)
+    if body.visibility is not None:
+        updates.append("visibility = ?")
+        values.append(body.visibility)
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(content_id)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE content_items SET {', '.join(updates)} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"updated": True, "id": content_id, "status": body.status, "visibility": body.visibility}
+
+
+@app.delete("/creator/content/{content_id}")
+async def delete_creator_content(
+    content_id: int,
+    current_user: dict = Depends(require_creator),
+):
+    """Soft-delete a content_item via the deleted_at tombstone column.
+
+    Used by the review screen's Discard button. The row is preserved on disk
+    so we can still answer "how much budget did this creator spend today"
+    correctly (deletion does not refund the daily cap — see
+    creator_generate_content for the rationale) and so we have a path to a
+    Trash / Restore UI in V2 without a schema change.
+
+    Idempotent — deleting an already-deleted row is a 404.
+    """
+    if _fetch_creator_content(content_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE content_items
+            SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (content_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"deleted": True, "id": content_id}
+
+
 async def generate_topic_content(topic: str, skill_level: str) -> str:
     """Generate comprehensive educational content for any topic using AI."""
 
