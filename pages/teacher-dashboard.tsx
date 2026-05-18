@@ -27,6 +27,18 @@ interface Student {
 interface TopicItem {
   topic: string
   assigned_at: string
+  // Nullable: legacy (pre-pivot) batch_topics rows have no curated link.
+  // Frontend uses presence to render the Curated / Legacy badge.
+  content_item_id: number | null
+}
+
+interface LibraryItem {
+  id: number
+  topic: string
+  skill_level: string
+  status: string
+  visibility: string
+  created_at: string
 }
 
 interface StudentProgress {
@@ -53,8 +65,14 @@ export default function TeacherDashboard() {
   const [newClassName, setNewClassName] = useState('')
   const [newBatchName, setNewBatchName] = useState('')
   const [newStudentEmail, setNewStudentEmail] = useState('')
-  const [newTopic, setNewTopic] = useState('')
   const [feedback, setFeedback] = useState('')
+
+  // Library picker state — post-pivot, assignment picks a curated
+  // content_item from the creator's library instead of typing a topic.
+  // Library is fetched lazily when the topics tab opens.
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [selectedContentItemId, setSelectedContentItemId] = useState<number | ''>('')
 
   // Auth guard
   useEffect(() => {
@@ -66,6 +84,7 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (isAuthenticated && role === 'creator') {
       fetchClasses()
+      fetchLibrary()
     }
   }, [isAuthenticated, role])
 
@@ -177,18 +196,33 @@ export default function TeacherDashboard() {
     fetchStudents(selectedBatch.id)
   }
 
+  const fetchLibrary = async () => {
+    setLibraryLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/creator/content`, { headers: authHeaders() })
+      if (!res.ok) return
+      const data = await res.json()
+      setLibraryItems(data.items || [])
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
   const assignTopic = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newTopic.trim() || !selectedBatch) return
+    if (!selectedBatch || selectedContentItemId === '') return
     const res = await fetch(`${API_URL}/teacher/batches/${selectedBatch.id}/topics`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ topic: newTopic.trim() })
+      body: JSON.stringify({ content_item_id: selectedContentItemId })
     })
     if (res.ok) {
-      setNewTopic('')
+      setSelectedContentItemId('')
       fetchTopics(selectedBatch.id)
-      showFeedback('Topic assigned!')
+      showFeedback('Content assigned!')
+    } else {
+      const body = await res.json().catch(() => ({}))
+      showFeedback(body.detail || 'Could not assign. Please try again.', true)
     }
   }
 
@@ -375,28 +409,61 @@ export default function TeacherDashboard() {
                     </>
                   )}
 
-                  {/* Topics tab */}
+                  {/* Topics tab — post-pivot: assign curated content_items from the creator's library. */}
                   {batchTab === 'topics' && (
                     <>
-                      <form onSubmit={assignTopic} className="flex gap-2 mb-4">
-                        <input
-                          value={newTopic}
-                          onChange={e => setNewTopic(e.target.value)}
-                          placeholder="e.g. Dinosaurs"
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        />
-                        <button type="submit" className="px-3 py-2 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">
-                          Assign
-                        </button>
-                      </form>
+                      {libraryItems.length === 0 ? (
+                        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
+                          You don&apos;t have any content in your library yet.{' '}
+                          <a href="/create" className="font-semibold underline">Create your first article</a> to assign it to a batch.
+                        </div>
+                      ) : (
+                        <form onSubmit={assignTopic} className="flex gap-2 mb-2">
+                          <select
+                            value={selectedContentItemId}
+                            onChange={e => setSelectedContentItemId(e.target.value === '' ? '' : Number(e.target.value))}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                          >
+                            <option value="">Pick content to assign...</option>
+                            {libraryItems.map(item => (
+                              <option key={item.id} value={item.id}>
+                                {item.topic} · {item.skill_level} · {item.status === 'validated' ? 'Saved' : item.status === 'published' ? 'Published' : 'Draft'}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="submit"
+                            disabled={selectedContentItemId === ''}
+                            className="px-3 py-2 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Assign
+                          </button>
+                        </form>
+                      )}
+                      {libraryItems.length > 0 && (
+                        <p className="text-xs text-gray-400 mb-4">
+                          Need something new? <a href="/create" className="text-indigo-600 hover:text-indigo-800 font-semibold">Create a new article →</a>
+                        </p>
+                      )}
                       <div className="space-y-2">
-                        {topics.length === 0 && <p className="text-sm text-gray-400">No topics assigned yet.</p>}
+                        {topics.length === 0 && <p className="text-sm text-gray-400">No content assigned yet.</p>}
                         {topics.map(t => (
                           <div key={t.topic} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-800 capitalize">{t.topic}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm font-medium text-gray-800 capitalize truncate">{t.topic}</span>
+                              {t.content_item_id ? (
+                                <span className="inline-block px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold uppercase tracking-wider shrink-0">
+                                  Curated
+                                </span>
+                              ) : (
+                                <span className="inline-block px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-[10px] font-bold uppercase tracking-wider shrink-0">
+                                  Legacy
+                                </span>
+                              )}
+                            </div>
                             <button
                               onClick={() => removeTopic(t.topic)}
-                              className="text-xs text-red-500 hover:text-red-700"
+                              className="text-xs text-red-500 hover:text-red-700 shrink-0 ml-2"
                             >
                               Remove
                             </button>

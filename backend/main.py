@@ -2280,7 +2280,15 @@ class AssignStudentRequest(BaseModel):
     student_email: str
 
 class AssignTopicRequest(BaseModel):
-    topic: str
+    """Assign a topic (legacy) or a curated content_item to a batch.
+
+    Post-pivot the frontend always sends `content_item_id` — the topic is
+    looked up from content_items.topic for the denormalized label. The
+    `topic`-only path is preserved for legacy clients and pre-pivot
+    rows but is no longer exercised by our UI.
+    """
+    topic: Optional[str] = None
+    content_item_id: Optional[int] = None
 
 # ─── Teacher Endpoints ────────────────────────────────────────────────────────
 
@@ -2452,7 +2460,28 @@ async def prefetch_content(topic: str):
 
 @app.post("/teacher/batches/{batch_id}/topics")
 async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_creator)):
-    """Assign a topic to a batch and pre-generate its content in the background."""
+    """Assign curated content (post-pivot) or a free-text topic (legacy) to a batch.
+
+    Two paths:
+
+    1. `content_item_id` provided (post-pivot, what the new UI sends):
+       Verify the creator owns the content_item, look up its topic for the
+       denormalized batch_topics.topic label, insert the row with both
+       fields set. Skip prefetch_content — the content is already generated
+       and lives in content_items. Students get the specific curated piece
+       via task #16's /learn changes.
+
+    2. Only `topic` provided (legacy path, kept for backward compat):
+       Insert with topic-only as before; fire prefetch_content so the
+       legacy on-demand generator path still works for pre-pivot batches.
+
+    Duplicate guards:
+       - (batch_id, content_item_id) duplicate → 409, friendly message.
+       - (batch_id, topic) UNIQUE violation → 409, surfaces the limitation
+         that two content_items with the same topic name can't coexist in
+         the same batch until task #21's schema rebuild.
+    """
+    # --- Verify batch ownership.
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -2463,14 +2492,68 @@ async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: di
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Batch not found")
+
+    # --- Path A: curated content_item (post-pivot path).
+    if body.content_item_id is not None:
+        item = _fetch_creator_content(body.content_item_id, current_user["id"])
+        if item is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Content item not found")
+
+        # Already-assigned guard on the FK.
+        cursor.execute(
+            "SELECT 1 FROM batch_topics WHERE batch_id = ? AND content_item_id = ?",
+            (batch_id, body.content_item_id),
+        )
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(
+                status_code=409,
+                detail="This content is already assigned to this batch.",
+            )
+
+        topic_label = item["topic"]
+        try:
+            cursor.execute(
+                "INSERT INTO batch_topics (batch_id, topic, content_item_id) VALUES (?, ?, ?)",
+                (batch_id, topic_label, body.content_item_id),
+            )
+            conn.commit()
+        except Exception:
+            # The (batch_id, topic) UNIQUE constraint from pre-pivot is still
+            # in effect (loosening it requires a SQLite table rebuild — task #21).
+            # This fires when two content_items with the same topic name try to
+            # land in the same batch; not great UX but at least we say something.
+            conn.close()
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Another assignment in this batch already uses the topic "
+                    f"name '{topic_label}'. Until we lift the constraint (task #21), "
+                    f"only one content item per topic name can coexist in a batch."
+                ),
+            )
+        conn.close()
+        return {
+            "message": "Content assigned",
+            "batch_id": batch_id,
+            "topic": topic_label,
+            "content_item_id": body.content_item_id,
+        }
+
+    # --- Path B: legacy topic-only.
+    if not body.topic:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Either content_item_id or topic is required")
+
     try:
         cursor.execute("INSERT INTO batch_topics (batch_id, topic) VALUES (?, ?)", (batch_id, body.topic))
         conn.commit()
     except Exception:
-        pass  # Already assigned — ignore duplicate
+        pass  # Already assigned — ignore duplicate (legacy behavior preserved)
     conn.close()
 
-    # Fire-and-forget: pre-generate content so students get instant load
+    # Fire-and-forget: pre-generate via the legacy cache path.
     asyncio.create_task(prefetch_content(body.topic))
 
     return {"message": "Topic assigned", "batch_id": batch_id, "topic": body.topic}
@@ -2506,10 +2589,18 @@ async def list_batch_topics(batch_id: int, current_user: dict = Depends(require_
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Batch not found")
-    cursor.execute("SELECT topic, assigned_at FROM batch_topics WHERE batch_id = ?", (batch_id,))
+    cursor.execute(
+        "SELECT topic, assigned_at, content_item_id FROM batch_topics WHERE batch_id = ?",
+        (batch_id,),
+    )
     rows = cursor.fetchall()
     conn.close()
-    return [{"topic": r[0], "assigned_at": r[1]} for r in rows]
+    # content_item_id is nullable: rows from the pre-pivot era won't have one.
+    # Frontend uses its presence to render a Curated / Legacy badge.
+    return [
+        {"topic": r[0], "assigned_at": r[1], "content_item_id": r[2]}
+        for r in rows
+    ]
 
 @app.get("/teacher/batches/{batch_id}/progress")
 async def get_batch_progress(batch_id: int, current_user: dict = Depends(require_creator)):
