@@ -66,8 +66,8 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 
 ## Phase 4 — Student consumption
 
-- [ ] **#16 Switch `/learn` to fetch stored content** ⬜
-  `pages/learn/[topic].tsx` resolves to a stored `content_item` by id (via assignment lookup). Removes generate-on-demand fallback for students.
+- [x] **#16 Switch `/learn` to fetch stored content** ✅
+  Backend: idempotent migration adds 3 nullable TEXT columns to `content_items` — `sections`, `images`, `quiz_questions` (JSON blobs, same pattern as `validator_feedback`). New endpoint `GET /student/learn/{topic}` (student-only via `require_student`): resolves `(student_id, topic) → content_item_id` via JOIN through `batch_topics` + `batch_students` (excludes legacy NULL-FK rows + soft-deleted items, ORDER BY assigned_at DESC LIMIT 1 so a student in multiple batches with the same topic name gets the most recent). 404 collapses "not assigned" and "doesn't exist" so cross-student existence isn't leaked. New helper `_ensure_content_item_assets()` lazy-computes sections (via `parse_and_enrich_sections`), images (via Unsplash), and quiz questions (via `generate_quiz_questions`) on the first student's view, then writes them back to the row so subsequent students get instant load. Empty-list cache on individual failure so we don't re-pay the slow path. Returns the legacy `ContentResponse` shape PLUS `quiz_questions` so the UI doesn't need a redesigned data contract. Frontend (`pages/learn/[topic].tsx`): swapped POST `/generate-content` → GET `/student/learn/{topic}` with the bearer token. Pre-flight checks: no token → "Sign in to view your assignments"; creator role → "Creators preview from /library". 404 message: "This content isn't assigned to you yet. Check with your teacher or parent." Quiz now uses cached `quiz_questions` from the response directly (no extra round trip); legacy `/generate-quiz` retained as fallback for the rare empty-cache case. Type-clean.
 
 - [ ] **#17 End-to-end test student consumption flow** ⬜
   Full round-trip: creator signs up → generates → assigns → student signs in → opens assignment → reads/listens → takes quiz → score recorded.

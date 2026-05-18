@@ -263,6 +263,22 @@ def init_database():
         ON batch_topics(content_item_id)
     """)
 
+    # Lazy-cached student-facing assets for content_items.
+    #
+    # The orchestrator (task #9) intentionally skips computing sections,
+    # images, and quiz_questions to keep /create fast — these would add
+    # 10-15s and cost extra Gemini + Unsplash calls per draft, even though
+    # creators regenerate often and most drafts never get assigned.
+    #
+    # Task #16's student /learn page computes them on first view and writes
+    # them back here so subsequent students get instant load. All three
+    # columns are nullable JSON-blob TEXT — same pattern as validator_feedback.
+    for col in ("sections", "images", "quiz_questions"):
+        try:
+            cursor.execute(f"ALTER TABLE content_items ADD COLUMN {col} TEXT")
+        except Exception:
+            pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -1081,6 +1097,242 @@ async def delete_creator_content(
         conn.close()
 
     return {"deleted": True, "id": content_id}
+
+
+# ---------------------------------------------------------------------------
+# Student-facing learn endpoint (task #16).
+#
+# Resolves /learn/[topic] to the specific content_item the student's creator
+# assigned, via the batch_topics.content_item_id FK from task #6. No more
+# on-demand generation for students — the pivot's central premise.
+# ---------------------------------------------------------------------------
+
+
+async def _ensure_content_item_assets(item: dict) -> dict:
+    """Lazy-compute sections/images/quiz for a content_item the first time
+    a student opens it. Subsequent students get the cached versions.
+
+    The orchestrator (#9) intentionally skips these to keep /create fast.
+    First student to open the assignment pays a one-time ~10s wait while
+    we run parse_and_enrich_sections + Unsplash + generate_quiz_questions.
+    Results are written back to the row via UPDATE so the second student
+    gets instant load.
+
+    Mutates `item` in place to add `sections`, `images`, `quiz_questions`
+    (each as a parsed list, not a JSON string). Returns it for convenience.
+    """
+    content_id = item["id"]
+    final_content = item.get("final_content") or ""
+    topic = item.get("topic") or ""
+
+    needs_write = False
+
+    # Sections.
+    if item.get("sections"):
+        try:
+            item["sections"] = json.loads(item["sections"])
+        except Exception:
+            item["sections"] = []
+    else:
+        try:
+            item["sections"] = await parse_and_enrich_sections(topic, final_content)
+        except Exception as e:
+            print(f"⚠️ Lazy section parse failed for item {content_id}: {e}")
+            item["sections"] = []
+        needs_write = True
+
+    # Images.
+    if item.get("images"):
+        try:
+            item["images"] = json.loads(item["images"])
+        except Exception:
+            item["images"] = []
+    else:
+        try:
+            item["images"] = await get_unsplash_images(topic, 3)
+        except Exception as e:
+            print(f"⚠️ Lazy image fetch failed for item {content_id}: {e}")
+            item["images"] = []
+        needs_write = True
+
+    # Quiz questions.
+    if item.get("quiz_questions"):
+        try:
+            item["quiz_questions"] = json.loads(item["quiz_questions"])
+        except Exception:
+            item["quiz_questions"] = []
+    else:
+        try:
+            item["quiz_questions"] = await generate_quiz_questions(topic, final_content)
+        except Exception as e:
+            print(f"⚠️ Lazy quiz gen failed for item {content_id}: {e}")
+            item["quiz_questions"] = []
+        needs_write = True
+
+    # Persist back so the second student gets instant load. We write even
+    # when individual computations failed (empty list cached) — better to
+    # not retry every student than to re-pay the slow path.
+    if needs_write:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE content_items
+                SET sections = ?, images = ?, quiz_questions = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    json.dumps(item["sections"]),
+                    json.dumps(item["images"]),
+                    json.dumps(item["quiz_questions"]),
+                    content_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return item
+
+
+def _lookup_student_assignment(student_id: int, topic: str) -> Optional[int]:
+    """Resolve (student, topic) -> content_item_id via the assignment chain.
+
+    Joins batch_students -> batch_topics so we only match topics this
+    student is actually assigned to. Excludes pre-pivot legacy rows where
+    content_item_id is NULL — they have no curated content to serve.
+
+    Returns None if the student isn't assigned this topic via any batch
+    they're a member of, or if every matching row is legacy. The endpoint
+    above turns that into a 404 (rather than 403) so we don't leak the
+    existence of assignments to other students.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        # If a student is in multiple batches that happen to share the same
+        # topic name, we pick the most recently assigned. Soft-deleted
+        # content_items are excluded so a creator's delete clears it from
+        # the student's view too.
+        cursor.execute(
+            """
+            SELECT bt.content_item_id
+            FROM batch_topics bt
+            JOIN batch_students bs ON bs.batch_id = bt.batch_id
+            JOIN content_items ci ON ci.id = bt.content_item_id
+            WHERE bs.student_id = ?
+              AND bt.topic = ?
+              AND bt.content_item_id IS NOT NULL
+              AND ci.deleted_at IS NULL
+            ORDER BY bt.assigned_at DESC
+            LIMIT 1
+            """,
+            (student_id, topic),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    return row[0] if row else None
+
+
+@app.get("/student/learn/{topic}")
+async def student_learn(
+    topic: str,
+    current_user: dict = Depends(require_student),
+):
+    """Fetch the curated content_item this student was assigned for `topic`.
+
+    Replaces the legacy POST /generate-content path for students. Looks up
+    the assignment via batch_topics, loads the content_item, lazy-computes
+    sections/images/quiz on first view, caches them back, and returns the
+    same response shape /generate-content used so the frontend doesn't
+    need a redesigned data contract.
+
+    Returns 404 ("Not assigned to you") if the student has no assignment
+    for this topic — covers both "topic exists but not yours" and "topic
+    doesn't exist at all." We collapse the cases on purpose: leaking
+    existence of other students' assignments serves no one.
+    """
+    student_id = current_user["id"]
+
+    content_item_id = _lookup_student_assignment(student_id, topic)
+    if content_item_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail="This content isn't assigned to you.",
+        )
+
+    # Load the content_item. _fetch_creator_content enforces creator_ownership
+    # which we don't want here — students aren't the creator. Do a direct
+    # SELECT instead. Soft-delete already filtered in the JOIN above.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, topic, skill_level, final_content,
+                   sections, images, quiz_questions
+            FROM content_items
+            WHERE id = ?
+            """,
+            (content_item_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        # Race condition: row was deleted between the lookup and this read.
+        # Treat as 404 — same as if it never existed.
+        raise HTTPException(status_code=404, detail="This content isn't assigned to you.")
+
+    item = {
+        "id": row[0],
+        "topic": row[1],
+        "skill_level": row[2],
+        "final_content": row[3],
+        "sections": row[4],
+        "images": row[5],
+        "quiz_questions": row[6],
+    }
+
+    # First-view lazy compute. Mutates item to add parsed sections / images
+    # / quiz_questions and writes them back to the row.
+    await _ensure_content_item_assets(item)
+
+    # Track progress — same call the legacy /generate-content makes so the
+    # creator dashboard's progress tab stays accurate.
+    try:
+        await record_user_progress(
+            student_id,
+            item["topic"],
+            "",  # dimension no longer used
+            item["skill_level"],
+            time_spent=0,
+            audio_played=False,
+        )
+    except Exception as e:
+        print(f"⚠️ Could not track progress: {e}")
+
+    # Shape the response to match the legacy ContentResponse so the
+    # existing /learn/[topic].tsx UI doesn't need restructuring. The
+    # legacy endpoint also returned readability_score + word_count;
+    # we compute them inline rather than persisting since they're cheap.
+    fk_score = textstat.flesch_reading_ease(item["final_content"]) if item["final_content"] else 0
+    word_count = len(item["final_content"].split()) if item["final_content"] else 0
+
+    return {
+        "topic": item["topic"],
+        "skill_level": item["skill_level"],
+        "content": item["final_content"],
+        "readability_score": fk_score,
+        "word_count": word_count,
+        "images": item["images"],
+        "sections": item["sections"],
+        "quiz_questions": item["quiz_questions"],
+    }
 
 
 async def generate_topic_content(topic: str, skill_level: str) -> str:

@@ -21,6 +21,12 @@ interface ContentResponse {
     position: number
   }>
   sections: Section[]
+  // Post-pivot: the new /student/learn/{topic} endpoint includes the
+  // student-facing quiz alongside the content (lazy-computed on first
+  // view and cached on content_items). The legacy on-demand
+  // /generate-content path doesn't return this; field is optional so
+  // the type can describe both.
+  quiz_questions?: QuizQuestion[]
 }
 
 interface QuizQuestion {
@@ -94,18 +100,48 @@ export default function LearnPage() {
     setQuizScore(null)
     setStoryMode(false)
 
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
+    // Post-pivot: /learn is student-only and serves the specific
+    // content_item the creator assigned, looked up via batch_topics.
+    // No more on-demand generation. Anonymous users and creators get
+    // dedicated messages — they shouldn't be here.
+    if (!token) {
+      setError('Sign in to view your assignments.')
+      setLoading(false)
+      return
+    }
+    if (role === 'creator') {
+      setError('Creators preview their own content from the library. Visit /library to see your articles.')
+      setLoading(false)
+      return
+    }
 
+    try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-content`,
-        { method: 'POST', headers, body: JSON.stringify({ topic: t, skill_level: 'Explorer' }) }
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/student/learn/${encodeURIComponent(t)}`,
+        { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
       )
 
-      if (!response.ok) throw new Error('Failed to generate content')
+      if (response.status === 404) {
+        // Backend collapses "not assigned" and "doesn't exist" — same
+        // message either way, no information leaked across students.
+        setError('This content isn\'t assigned to you yet. Check with your teacher or parent.')
+        return
+      }
+      if (response.status === 401) {
+        setError('Your session expired. Please sign in again.')
+        return
+      }
+      if (!response.ok) throw new Error('Could not load this content')
+
       const data: ContentResponse = await response.json()
       setContent(data)
+
+      // The new endpoint pre-includes the quiz on first view (lazy-computed
+      // and cached on the content_item). Stash it for instant render when
+      // the student hits "Take quiz" — no extra round trip.
+      if (data.quiz_questions && data.quiz_questions.length > 0) {
+        setQuiz(data.quiz_questions)
+      }
     } catch (err) {
       setError('Unable to load content. Please try again!')
     } finally {
@@ -115,12 +151,25 @@ export default function LearnPage() {
 
   const generateQuiz = async () => {
     if (!content) return
-    setLoadingQuiz(true)
-    setQuiz(null)
     setQuizAnswers({})
     setQuizSubmitted(false)
     setQuizScore(null)
 
+    // Post-pivot fast path: the new /student/learn endpoint pre-includes
+    // quiz_questions in its response (lazy-computed and cached on
+    // content_items), so by the time the student clicks "Take quiz" we
+    // already have them. No network call, no spinner.
+    if (content.quiz_questions && content.quiz_questions.length > 0) {
+      setQuiz(content.quiz_questions)
+      return
+    }
+
+    // Legacy fallback: the old /generate-content path doesn't return a
+    // quiz, so we still hit /generate-quiz if the cache is empty (which
+    // also covers the rare case where lazy compute failed for a
+    // post-pivot item).
+    setLoadingQuiz(true)
+    setQuiz(null)
     try {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/generate-quiz`,
