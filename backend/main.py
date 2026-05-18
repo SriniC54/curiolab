@@ -904,6 +904,54 @@ def _fetch_creator_content(content_id: int, creator_id: int) -> Optional[dict]:
     }
 
 
+@app.get("/creator/content")
+async def list_creator_content(current_user: dict = Depends(require_creator)):
+    """List every content_item owned by the current creator.
+
+    Backs the /library page (task #14). Excludes soft-deleted rows (the
+    deleted_at tombstone column from task #4). Newest first.
+
+    Returns a *trimmed* shape — no `draft_content`, `final_content`, or
+    `validator_feedback` — so the list response stays small even if a
+    creator has many items. The /review/[id] page fetches the heavy
+    fields per-row via GET /creator/content/{id}.
+    """
+    creator_id = current_user["id"]
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, topic, skill_level, status, visibility,
+                   iteration_count, created_at, updated_at
+            FROM content_items
+            WHERE creator_id = ? AND deleted_at IS NULL
+            ORDER BY created_at DESC
+            """,
+            (creator_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "topic": r[1],
+                "skill_level": r[2],
+                "status": r[3],
+                "visibility": r[4],
+                "iteration_count": r[5],
+                "created_at": r[6],
+                "updated_at": r[7],
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }
+
+
 @app.get("/creator/content/{content_id}")
 async def get_creator_content(
     content_id: int,
