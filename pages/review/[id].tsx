@@ -16,7 +16,7 @@ import { useAuth } from '../../contexts/AuthContext'
  * Each action maps to a backend transition:
  *   Regenerate          -> new content_item via POST /creator/content/generate
  *   Save to library     -> PUT status='validated'   (then -> /library, 404 until #14)
- *   Assign to students  -> PUT status='validated'   (then -> /teacher-dashboard)
+ *   Assign to students  -> PUT status='validated'   (then -> /creator-dashboard)
  *   Publish public      -> PUT visibility='public'  (stays on page, banner)
  *   Discard             -> DELETE (soft, via deleted_at tombstone)
  *
@@ -148,7 +148,7 @@ export default function ReviewPage() {
 
   const handleAssign = async () => {
     const ok = await updateItem({ status: 'validated' })
-    if (ok) router.push('/teacher-dashboard')
+    if (ok) router.push('/creator-dashboard')
   }
 
   const handlePublishConfirm = async () => {
@@ -261,7 +261,13 @@ export default function ReviewPage() {
             <span className="text-green-700 font-semibold">Public</span>
           </>
         )}
-        {item.status === 'validated' && (
+        {item.visibility === 'assigned' && !isPublic && (
+          <>
+            <span>·</span>
+            <span className="text-indigo-700 font-semibold">Assigned</span>
+          </>
+        )}
+        {item.status === 'validated' && item.visibility !== 'assigned' && !isPublic && (
           <>
             <span>·</span>
             <span className="text-indigo-700 font-semibold">Saved</span>
@@ -348,7 +354,7 @@ function PageShell(props: {
               {props.userLabel && (
                 <span className="text-sm text-gray-500 hidden sm:block">{props.userLabel}</span>
               )}
-              <a href="/teacher-dashboard" className="px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-50 rounded transition-colors font-semibold">
+              <a href="/creator-dashboard" className="px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-50 rounded transition-colors font-semibold">
                 Dashboard
               </a>
               {props.onSignOut && (

@@ -74,16 +74,19 @@ Status legend: ✅ done · 🔄 in progress · ⬜ pending
 
 ## Phase 5 — Visibility wiring & cleanup
 
-- [ ] **#18 Wire visibility states through UI + backend** ⬜
-  `private` (library only), `assigned` (existing flow, points at content_item_id), `public` (flag set; no MVP browse surface). Endpoints + UI toggles.
+- [x] **#18 Wire visibility states through UI + backend** ✅
+  Backend: `assign_topic` now auto-transitions `content_items.status` (draft→validated) and `content_items.visibility` (private→assigned) when a curated content_item lands in a batch, with both transitions guarded so 'public' wins over 'assigned' (a published article assigned to a batch stays public, not downgraded). Reverse path (auto-revert to 'private' when the last batch reference is removed) deliberately deferred — adds a count query on every unassignment for marginal benefit; creators can toggle visibility manually from the review screen if it matters. Frontend: `pages/library.tsx` shows mutually-exclusive badges (Saved/Published, plus Assigned/Public when applicable); `pages/review/[id].tsx` meta line shows priority-ordered badge (Public > Assigned > Saved) so the most important state surfaces; Publish/Unpublish toggle on the review screen handles the private↔public flip directly via PUT. No new endpoints needed — the existing `PUT /creator/content/{id}` covers manual toggles, and the auto-transitions piggyback on the assignment endpoint.
 
-- [ ] **#19 Remove `content_cache/` JSON layer** ⬜
-  Rip out backend cache writes/reads. Content lives only in `content_items` going forward.
+- [x] **#19 Remove `content_cache/` JSON layer** ✅
+  Most of the cleanup landed earlier: `CACHE_DIR`, `get_cached_content`, `cache_content`, legacy whole-article audio endpoints (`/generate-audio`, `/audio/{topic}/{skill_level}`, `/content-exists`), and the legacy `POST /generate-content` endpoint were already ripped out. This task finished it off by removing the last orphans: the `prefetch_content` background task (called now-deleted helpers and would have crashed if invoked) and the legacy text-only path in `assign_topic` (no UI hit it, and students can't consume legacy NULL-FK rows anyway). `AssignTopicRequest` tightened to make `content_item_id` required. Content lives only in `content_items` from here on; assets (sections / images / quiz_questions) are lazy-computed and cached on the row via `_ensure_content_item_assets`. The `content_cache/` directory can be deleted from disk (already gitignored). Active audio path (`POST /tts-section` + `AUDIO_CACHE_DIR`) is separate and unaffected.
 
 ## Followups (post-MVP cleanup)
 
 - [ ] **#20 Rotate GitHub PAT + move out of remote URL** ⬜
   Revoke embedded PAT, generate new one, move into a credential helper (`gh auth login`, `git-credential-manager`, or osxkeychain). Sanity grep for stray tokens before closing out.
+
+- [x] **#21 Cosmetic `teacher` → `creator` sweep** ✅
+  User-visible route renamed: `pages/teacher-dashboard.tsx` → `pages/creator-dashboard.tsx` via `git mv`. All in-app links updated: `pages/create.tsx`, `pages/library.tsx`, `pages/learn/[topic].tsx`, `pages/review/[id].tsx`. Type-clean after the rename. **Deferred to a future cleanup pass:** the DB column `classes.teacher_id` (SQLite would need a table rebuild — invasive, no user-facing benefit) and the `/teacher/*` API routes (renaming would break the existing frontend; needs synchronized backend + frontend update). Neither leaks through user-visible URLs — both are internal — so the cosmetic story is consistent for anyone bookmarking or sharing URLs even with the legacy internals.
 
 ---
 

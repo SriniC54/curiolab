@@ -96,7 +96,7 @@ export default function LibraryPage() {
                 {user?.name || user?.email}
               </span>
               <a
-                href="/teacher-dashboard"
+                href="/creator-dashboard"
                 className="px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-50 rounded transition-colors font-semibold"
               >
                 Dashboard
@@ -158,6 +158,7 @@ function ItemList(props: { items: LibraryItem[]; onOpen: (id: number) => void })
                 {item.topic}
               </span>
               <StatusBadge status={item.status} />
+              {item.visibility === 'assigned' && <Badge color="indigo">Assigned</Badge>}
               {item.visibility === 'public' && <Badge color="green">Public</Badge>}
             </div>
             <div className="text-sm text-gray-500">

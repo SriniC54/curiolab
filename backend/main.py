@@ -47,10 +47,10 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Initialize Gemini client (text generation)
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Cache directory setup
-CACHE_DIR = Path("content_cache")
-CACHE_DIR.mkdir(exist_ok=True)
-
+# Audio cache directory (separate from the now-removed content cache).
+# /tts-section writes mp3s here so we don't re-synthesize the same section
+# audio for every student. The content_cache JSON layer was ripped out in
+# task #19 — content now lives only in content_items.
 AUDIO_CACHE_DIR = Path("audio_cache")
 AUDIO_CACHE_DIR.mkdir(exist_ok=True)
 
@@ -401,119 +401,27 @@ async def record_user_progress(user_id: int, topic: str, dimension: str, skill_l
         # Don't raise exception here to avoid breaking the main functionality
 
 def get_cache_key(topic: str, skill_level: str) -> str:
-    """Generate a consistent cache key for content."""
-    # Normalize inputs to handle variations in capitalization/spacing
+    """Generate a consistent cache key (still used by the audio cache).
+
+    Pre-pivot this keyed both the content_cache JSON files and the audio
+    cache. Content cache is gone (task #19) — content lives in
+    content_items now. Audio cache still uses this helper to derive mp3
+    filenames in AUDIO_CACHE_DIR.
+    """
     normalized = f"{topic.lower().strip()}-{skill_level.lower().strip()}"
-    # Use hash to handle special characters and ensure valid filename
     cache_hash = hashlib.md5(normalized.encode()).hexdigest()[:8]
     return f"{normalized.replace(' ', '_')}-{cache_hash}"
-
-def get_cached_content(topic: str, skill_level: str) -> dict | None:
-    """Retrieve cached content if it exists."""
-    cache_key = get_cache_key(topic, skill_level)
-    cache_file = CACHE_DIR / f"{cache_key}.json"
-
-    try:
-        if cache_file.exists():
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                cached_data = json.load(f)
-                print(f"✅ Cache HIT for {topic}-{skill_level}")
-                return cached_data
-    except Exception as e:
-        print(f"❌ Cache read error for {cache_key}: {e}")
-
-    print(f"💭 Cache MISS for {topic}-{skill_level}")
-    return None
-
-def cache_content(topic: str, skill_level: str, content: str, word_count: int, readability_score: float, sections: list = None) -> None:
-    """Cache generated content for future use."""
-    cache_key = get_cache_key(topic, skill_level)
-    cache_file = CACHE_DIR / f"{cache_key}.json"
-
-    cache_data = {
-        "topic": topic,
-        "skill_level": skill_level,
-        "content": content,
-        "word_count": word_count,
-        "readability_score": readability_score,
-    }
-    if sections is not None:
-        cache_data["sections"] = sections
-
-    try:
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            import datetime
-            cache_data["cached_at"] = datetime.datetime.now().isoformat()
-            json.dump(cache_data, f, ensure_ascii=False, indent=2)
-        print(f"💾 Cached content for {topic}-{skill_level}")
-    except Exception as e:
-        print(f"❌ Cache write error for {cache_key}: {e}")
 
 def get_audio_cache_key(topic: str, skill_level: str) -> str:
     """Generate cache key for audio files."""
     return get_cache_key(topic, skill_level)
 
-def get_cached_audio(topic: str, skill_level: str) -> Path | None:
-    """Check if audio file exists in cache."""
-    cache_key = get_audio_cache_key(topic, skill_level)
-    audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
+# NOTE: The whole-article audio helpers (get_cached_audio, clean_text_for_tts,
+# generate_audio) and the AudioRequest model were removed in task #19 along
+# with their only caller (/generate-audio). The active audio path is
+# POST /tts-section (per-section TTS used by StoryPlayer) which has its own
+# inline cache logic inside the endpoint and is unaffected.
 
-    if audio_file.exists():
-        print(f"🎵 Audio cache HIT for {topic}-{skill_level}")
-        return audio_file
-
-    print(f"🎵 Audio cache MISS for {topic}-{skill_level}")
-    return None
-
-def clean_text_for_tts(content: str) -> str:
-    """Clean text content for better TTS pronunciation."""
-    # Remove markdown formatting
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', content)  # Remove **bold**
-    text = re.sub(r'^\*\*.*?\*\*', '', text, flags=re.MULTILINE)  # Remove heading asterisks
-    
-    # Add pauses for better readability
-    text = re.sub(r'\n\n', '. ', text)  # Convert paragraph breaks to pauses
-    text = re.sub(r'\n', ' ', text)     # Convert line breaks to spaces
-    
-    # Clean up extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    return text
-
-async def generate_audio(topic: str, skill_level: str, content: str) -> Path:
-    """Generate audio using OpenAI TTS and cache it."""
-    cache_key = get_audio_cache_key(topic, skill_level)
-    audio_file = AUDIO_CACHE_DIR / f"{cache_key}.mp3"
-
-    # Check cache first
-    if audio_file.exists():
-        return audio_file
-
-    try:
-        clean_content = clean_text_for_tts(content)
-        print(f"🎤 Generating audio for {topic}-{skill_level}")
-
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice="nova",
-            input=clean_content
-        )
-
-        with open(audio_file, 'wb') as f:
-            for chunk in response.iter_bytes():
-                f.write(chunk)
-
-        print(f"🎵 Audio cached for {topic}-{skill_level}")
-        return audio_file
-
-    except Exception as e:
-        print(f"❌ Audio generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
-
-class AudioRequest(BaseModel):
-    topic: str
-    dimension: str = ""  # deprecated, ignored
-    grade_level: int
 
 class ContentRequest(BaseModel):
     topic: str
@@ -584,28 +492,6 @@ class TimeTrackingRequest(BaseModel):
 async def root():
     return {"message": "CurioLab API is running!"}
 
-@app.get("/cache-stats")
-async def get_cache_stats():
-    """Get cache statistics for monitoring."""
-    try:
-        cache_files = list(CACHE_DIR.glob("*.json"))
-        total_cached = len(cache_files)
-        
-        # Calculate cache size
-        total_size = sum(f.stat().st_size for f in cache_files)
-        size_mb = round(total_size / (1024 * 1024), 2)
-        
-        return {
-            "total_cached_content": total_cached,
-            "cache_size_mb": size_mb,
-            "cache_directory": str(CACHE_DIR.absolute()),
-            "status": "healthy"
-        }
-    except Exception as e:
-        return {
-            "error": str(e),
-            "status": "error"
-        }
 
 def is_topic_appropriate(topic: str) -> bool:
     """Basic check for obviously inappropriate topics."""
@@ -635,84 +521,11 @@ def is_topic_appropriate(topic: str) -> bool:
     return True
 
 
-@app.post("/generate-content", response_model=ContentResponse)
-async def generate_content(request: ContentRequest, authorization: Optional[str] = Header(None)):
-    """Generate educational content for a given topic."""
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="Gemini API key not configured")
-
-    if not request.topic or len(request.topic.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Topic must be at least 2 characters long")
-
-    if not is_topic_appropriate(request.topic):
-        raise HTTPException(status_code=400, detail="Please choose an educational topic appropriate for young learners")
-
-    if request.skill_level not in ["Beginner", "Explorer", "Expert"]:
-        raise HTTPException(status_code=400, detail="Only Beginner, Explorer, and Expert skill levels are supported")
-
-    try:
-        cached_content = get_cached_content(request.topic, request.skill_level)
-
-        if cached_content:
-            images = await get_unsplash_images(request.topic, 3)
-            # If sections missing from old cache, generate them now
-            sections = cached_content.get("sections")
-            if not sections:
-                print(f"🔄 Generating missing sections for cached '{request.topic}'")
-                sections = await parse_and_enrich_sections(request.topic, cached_content["content"])
-                # Update cache file with sections
-                cache_content(
-                    cached_content["topic"], cached_content["skill_level"],
-                    cached_content["content"], cached_content["word_count"],
-                    cached_content["readability_score"], sections
-                )
-            response = ContentResponse(
-                topic=cached_content["topic"],
-                skill_level=cached_content["skill_level"],
-                content=cached_content["content"],
-                readability_score=cached_content["readability_score"],
-                word_count=cached_content["word_count"],
-                images=images,
-                sections=sections
-            )
-        else:
-            content = await generate_topic_content(request.topic, request.skill_level)
-            images = await get_unsplash_images(request.topic, 3)
-            fk_score = textstat.flesch_reading_ease(content)
-            word_count = len(content.split())
-            sections = await parse_and_enrich_sections(request.topic, content)
-            cache_content(request.topic, request.skill_level, content, word_count, fk_score, sections)
-            response = ContentResponse(
-                topic=request.topic,
-                skill_level=request.skill_level,
-                content=content,
-                readability_score=fk_score,
-                word_count=word_count,
-                images=images,
-                sections=sections
-            )
-
-        # Record progress if user is logged in
-        if authorization and authorization.startswith("Bearer "):
-            try:
-                token = authorization[len("Bearer "):]
-                payload = verify_jwt_token(token)
-                user_id = payload["user_id"]
-                await record_user_progress(
-                    user_id,
-                    request.topic,
-                    "",  # dimension no longer used
-                    request.skill_level,
-                    time_spent=0,
-                    audio_played=False
-                )
-            except Exception as e:
-                print(f"⚠️ Could not track progress: {e}")
-
-        return response
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+# NOTE: The legacy POST /generate-content endpoint was removed in task #19.
+# Pre-pivot it served on-demand content to students; post-pivot students go
+# through GET /student/learn/{topic} which serves the specific curated
+# content_item the creator assigned. No frontend code called this endpoint
+# after task #16, so removal is safe.
 
 
 @app.post("/creator/content/generate")
@@ -2220,83 +2033,13 @@ async def parse_and_enrich_sections(topic: str, content: str) -> list:
     return enriched
 
 
-@app.post("/generate-audio")
-async def generate_content_audio(request: AudioRequest, authorization: Optional[str] = Header(None)):
-    """Generate or retrieve cached audio for content."""
-    try:
-        skill_level = "beginner" if request.grade_level == 3 else "explorer" if request.grade_level == 4 else "expert"
-        skill_level_caps = skill_level.capitalize()
+# NOTE: The legacy whole-article audio endpoints (POST /generate-audio,
+# GET /audio/{topic}/{skill_level}) and the /content-exists cache probe
+# were removed in task #19. They all depended on the content_cache JSON
+# layer that's no longer written. The active audio path is
+# POST /tts-section (per-section TTS, used by StoryPlayer) which writes
+# to AUDIO_CACHE_DIR independently and is unaffected.
 
-        cached_content = get_cached_content(request.topic, skill_level_caps)
-        if not cached_content:
-            cached_content = get_cached_content(request.topic, skill_level)
-
-        if not cached_content:
-            raise HTTPException(
-                status_code=404,
-                detail="Please generate content first."
-            )
-
-        cached_audio_file = get_cached_audio(request.topic, skill_level)
-
-        if authorization and authorization.startswith("Bearer "):
-            try:
-                token = authorization[len("Bearer "):]
-                payload = verify_jwt_token(token)
-                user_id = payload["user_id"]
-                await record_user_progress(
-                    user_id,
-                    request.topic,
-                    "",
-                    skill_level_caps,
-                    time_spent=0,
-                    audio_played=True
-                )
-            except Exception as e:
-                print(f"⚠️ Could not track audio progress: {e}")
-
-        if cached_audio_file:
-            return FileResponse(
-                path=cached_audio_file,
-                media_type="audio/mpeg",
-                filename=f"{request.topic}-grade{request.grade_level}.mp3"
-            )
-
-        audio_file = await generate_audio(request.topic, skill_level, cached_content["content"])
-
-        return FileResponse(
-            path=audio_file,
-            media_type="audio/mpeg",
-            filename=f"{request.topic}-grade{request.grade_level}.mp3"
-        )
-
-    except Exception as e:
-        print(f"❌ Audio generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/audio/{topic}/{skill_level}")
-async def get_audio_file(topic: str, skill_level: str):
-    """Direct endpoint to get audio file if it exists."""
-    cached_audio_file = get_cached_audio(topic, skill_level)
-
-    if cached_audio_file:
-        return FileResponse(
-            path=cached_audio_file,
-            media_type="audio/mpeg",
-            filename=f"{topic}-{skill_level}.mp3"
-        )
-
-    raise HTTPException(status_code=404, detail="Audio file not found. Generate content and audio first.")
-
-@app.get("/content-exists/{topic}/{skill_level}")
-async def check_content_exists(topic: str, skill_level: str):
-    """Check if content exists in cache without generating it."""
-    cached_content = get_cached_content(topic, skill_level)
-
-    if cached_content:
-        return {"exists": True, "cached": True}
-    else:
-        return {"exists": False, "cached": False}
 
 # Authentication endpoints
 @app.post("/register")
@@ -2532,15 +2275,13 @@ class AssignStudentRequest(BaseModel):
     student_email: str
 
 class AssignTopicRequest(BaseModel):
-    """Assign a topic (legacy) or a curated content_item to a batch.
+    """Assign a curated content_item to a batch.
 
-    Post-pivot the frontend always sends `content_item_id` — the topic is
-    looked up from content_items.topic for the denormalized label. The
-    `topic`-only path is preserved for legacy clients and pre-pivot
-    rows but is no longer exercised by our UI.
+    Post-pivot only. The legacy topic-only path was removed in task #19;
+    the topic string is now looked up from content_items.topic for the
+    denormalized batch_topics.topic label.
     """
-    topic: Optional[str] = None
-    content_item_id: Optional[int] = None
+    content_item_id: int
 
 # ─── Teacher Endpoints ────────────────────────────────────────────────────────
 
@@ -2683,55 +2424,34 @@ async def list_batch_students(batch_id: int, current_user: dict = Depends(requir
     conn.close()
     return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
 
-async def prefetch_content(topic: str):
-    """Background task: pre-generate and cache content + sections for a topic if not already cached."""
-    try:
-        cached = get_cached_content(topic, "Explorer")
-        if cached:
-            # If sections already present, nothing to do
-            if cached.get("sections"):
-                print(f"✅ Content + sections already cached for '{topic}' — skipping pre-generation")
-                return
-            # Content cached but sections missing — enrich now
-            print(f"🔄 Fetching missing sections for cached '{topic}'...")
-            sections = await parse_and_enrich_sections(topic, cached["content"])
-            cache_content(cached["topic"], cached["skill_level"], cached["content"],
-                          cached["word_count"], cached["readability_score"], sections)
-            print(f"✅ Sections cached for '{topic}'")
-            return
-        print(f"🔄 Pre-generating content for '{topic}'...")
-        content = await generate_topic_content(topic, "Explorer")
-        fk_score = textstat.flesch_reading_ease(content)
-        word_count = len(content.split())
-        sections = await parse_and_enrich_sections(topic, content)
-        cache_content(topic, "Explorer", content, word_count, fk_score, sections)
-        print(f"✅ Pre-generation complete for '{topic}' ({word_count} words, {len(sections)} sections)")
-    except Exception as e:
-        print(f"⚠️ Pre-generation failed for '{topic}': {e}")
+# Task #19 removed the pre-pivot `prefetch_content` background task. It
+# depended on the content_cache JSON layer (also ripped out) and on the
+# legacy text-only assign_topic path (also removed below — see
+# AssignTopicRequest + assign_topic). The post-pivot flow doesn't need a
+# warm cache because content_items.final_content is already the cached
+# article; sections/images/quiz_questions are lazy-computed on first
+# student view (see _ensure_content_item_assets) and cached on the row.
 
 
 @app.post("/teacher/batches/{batch_id}/topics")
 async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: dict = Depends(require_creator)):
-    """Assign curated content (post-pivot) or a free-text topic (legacy) to a batch.
+    """Assign a curated content_item to a batch.
 
-    Two paths:
+    Post-pivot path only. The legacy text-only path was removed in task #19
+    along with the content_cache layer it depended on — no UI hits it, and
+    students can't consume legacy NULL-FK rows anyway (see
+    `_lookup_student_assignment` in `/student/learn/{topic}`).
 
-    1. `content_item_id` provided (post-pivot, what the new UI sends):
-       Verify the creator owns the content_item, look up its topic for the
-       denormalized batch_topics.topic label, insert the row with both
-       fields set. Skip prefetch_content — the content is already generated
-       and lives in content_items. Students get the specific curated piece
-       via task #16's /learn changes.
-
-    2. Only `topic` provided (legacy path, kept for backward compat):
-       Insert with topic-only as before; fire prefetch_content so the
-       legacy on-demand generator path still works for pre-pivot batches.
+    Verifies the creator owns the content_item, looks up its topic for the
+    denormalized batch_topics.topic label, inserts with both fields set,
+    and auto-transitions the content_item's status (draft→validated) and
+    visibility (private→assigned) so the library badges reflect reality.
 
     Duplicate guards:
-       - (batch_id, content_item_id) duplicate → 409, friendly message.
-       - (batch_id, topic) UNIQUE violation → 409, surfaces the limitation
-         that two content_items with the same topic name can't coexist in
-         the same batch until task #21's schema rebuild.
+      - (batch_id, content_item_id) duplicate → 409, friendly message.
+      - (batch_id, topic) UNIQUE violation → 409 (two content_items with the
+        same topic name can't coexist in the same batch until task #21's
+        schema rebuild).
     """
     # --- Verify batch ownership.
     conn = sqlite3.connect(DB_PATH)
@@ -2745,70 +2465,73 @@ async def assign_topic(batch_id: int, body: AssignTopicRequest, current_user: di
         conn.close()
         raise HTTPException(status_code=404, detail="Batch not found")
 
-    # --- Path A: curated content_item (post-pivot path).
-    if body.content_item_id is not None:
-        item = _fetch_creator_content(body.content_item_id, current_user["id"])
-        if item is None:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Content item not found")
+    # --- Ownership check on the content_item.
+    item = _fetch_creator_content(body.content_item_id, current_user["id"])
+    if item is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Content item not found")
 
-        # Already-assigned guard on the FK.
-        cursor.execute(
-            "SELECT 1 FROM batch_topics WHERE batch_id = ? AND content_item_id = ?",
-            (batch_id, body.content_item_id),
+    # --- Already-assigned guard on the FK.
+    cursor.execute(
+        "SELECT 1 FROM batch_topics WHERE batch_id = ? AND content_item_id = ?",
+        (batch_id, body.content_item_id),
+    )
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail="This content is already assigned to this batch.",
         )
-        if cursor.fetchone():
-            conn.close()
-            raise HTTPException(
-                status_code=409,
-                detail="This content is already assigned to this batch.",
-            )
 
-        topic_label = item["topic"]
-        try:
-            cursor.execute(
-                "INSERT INTO batch_topics (batch_id, topic, content_item_id) VALUES (?, ?, ?)",
-                (batch_id, topic_label, body.content_item_id),
-            )
-            conn.commit()
-        except Exception:
-            # The (batch_id, topic) UNIQUE constraint from pre-pivot is still
-            # in effect (loosening it requires a SQLite table rebuild — task #21).
-            # This fires when two content_items with the same topic name try to
-            # land in the same batch; not great UX but at least we say something.
-            conn.close()
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Another assignment in this batch already uses the topic "
-                    f"name '{topic_label}'. Until we lift the constraint (task #21), "
-                    f"only one content item per topic name can coexist in a batch."
-                ),
-            )
-        conn.close()
-        return {
-            "message": "Content assigned",
-            "batch_id": batch_id,
-            "topic": topic_label,
-            "content_item_id": body.content_item_id,
-        }
-
-    # --- Path B: legacy topic-only.
-    if not body.topic:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Either content_item_id or topic is required")
-
+    topic_label = item["topic"]
     try:
-        cursor.execute("INSERT INTO batch_topics (batch_id, topic) VALUES (?, ?)", (batch_id, body.topic))
+        cursor.execute(
+            "INSERT INTO batch_topics (batch_id, topic, content_item_id) VALUES (?, ?, ?)",
+            (batch_id, topic_label, body.content_item_id),
+        )
+        # Auto-transition the content_item's state so library/review
+        # badges reflect reality:
+        #   - status: draft -> validated. Assignment implies the creator
+        #     trusts the content enough to put it in front of students.
+        #     A draft arriving here was generated and assigned directly
+        #     from the dashboard without going through review's Save button.
+        #   - visibility: private -> assigned. Only if private — 'public'
+        #     wins (a published article assigned to a batch stays public).
+        # Auto-revert on last-batch removal is intentionally not done:
+        # adds a count query per unassignment for marginal benefit;
+        # creators can toggle visibility manually from the review screen.
+        cursor.execute(
+            """
+            UPDATE content_items
+            SET status     = CASE WHEN status = 'draft'      THEN 'validated' ELSE status     END,
+                visibility = CASE WHEN visibility = 'private' THEN 'assigned' ELSE visibility END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (body.content_item_id,),
+        )
         conn.commit()
     except Exception:
-        pass  # Already assigned — ignore duplicate (legacy behavior preserved)
+        # The pre-pivot UNIQUE(batch_id, topic) constraint is still in
+        # effect (loosening it requires a SQLite table rebuild — task #21).
+        # This fires when two content_items with the same topic name try
+        # to land in the same batch.
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Another assignment in this batch already uses the topic "
+                f"name '{topic_label}'. Until we lift the constraint (task #21), "
+                f"only one content item per topic name can coexist in a batch."
+            ),
+        )
     conn.close()
-
-    # Fire-and-forget: pre-generate via the legacy cache path.
-    asyncio.create_task(prefetch_content(body.topic))
-
-    return {"message": "Topic assigned", "batch_id": batch_id, "topic": body.topic}
+    return {
+        "message": "Content assigned",
+        "batch_id": batch_id,
+        "topic": topic_label,
+        "content_item_id": body.content_item_id,
+    }
 
 @app.delete("/teacher/batches/{batch_id}/topics/{topic}")
 async def remove_topic(batch_id: int, topic: str, current_user: dict = Depends(require_creator)):

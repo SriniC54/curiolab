@@ -79,7 +79,7 @@ export default function CreatePage() {
   const [phaseIndex, setPhaseIndex] = useState(0)
   const phaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // --- Auth guard. Same pattern as teacher-dashboard.tsx.
+  // --- Auth guard. Same pattern as creator-dashboard.tsx.
   useEffect(() => {
     if (!isLoading && (!isAuthenticated || role !== 'creator')) {
       window.location.href = '/'
@@ -206,7 +206,7 @@ export default function CreatePage() {
                   {user?.name || user?.email}
                 </span>
                 <a
-                  href="/teacher-dashboard"
+                  href="/creator-dashboard"
                   className="px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-50 rounded transition-colors font-semibold"
                 >
                   Dashboard
